@@ -1,0 +1,3245 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<base target="_top">
+<style>
+  :root {
+    --primary: #1F4E79;
+    --primary-dark: #163a5c;
+    --primary-soft: #EBF3FB;
+    --secondary: #F47C2C;
+    --gray-50: #F7F9FB;
+    --gray-100: #EAEDF2;
+    --gray-200: #D6DBE3;
+    --gray-400: #9AA3B0;
+    --text: #22303C;
+    --text-muted: #6B7684;
+    --danger: #C0392B;
+    --danger-soft: #FADBD8;
+    --ok: #1E8449;
+    --ok-soft: #D5F5E3;
+    --warn: #B7791F;
+    --warn-soft: #FDEBD0;
+    --radius: 6px;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.06);
+    --shadow-md: 0 2px 8px rgba(0,0,0,.08);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", Arial, sans-serif;
+    font-size: 13px; color: var(--text);
+    margin: 0; padding: 0;
+    background: var(--gray-50);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Sticky top status bar */
+  #status-bar {
+    position: fixed; top: 12px; right: 12px; z-index: 100;
+    max-width: 380px; padding: 10px 14px; border-radius: var(--radius);
+    font-size: 12.5px; font-weight: 500;
+    box-shadow: var(--shadow-md); display: none;
+    animation: slideIn .25s ease;
+  }
+  @keyframes slideIn { from { transform: translateY(-8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  /* Container so forms have breathing room + sticky footer works */
+  .form { display: none; padding: 18px 22px 88px 22px; }
+  .form.active { display: block; }
+  /* Section heading — a colored bar with a marker */
+  h2 {
+    color: var(--primary); margin: 0 0 16px 0; padding: 0 0 10px 0;
+    border-bottom: 2px solid var(--primary);
+    font-size: 17px; font-weight: 600; letter-spacing: -.01em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  h2::before {
+    content: ''; width: 4px; height: 22px; background: var(--secondary);
+    border-radius: 2px; display: inline-block;
+  }
+  h3 {
+    color: var(--primary); margin: 18px 0 8px; font-size: 13px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+    padding-left: 8px; border-left: 3px solid var(--secondary);
+  }
+  /* Field grids */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px 16px; }
+  .fg { display: flex; flex-direction: column; margin-bottom: 4px; }
+  .fg label {
+    font-weight: 500; font-size: 11.5px; color: var(--text-muted);
+    margin-bottom: 4px; text-transform: uppercase; letter-spacing: .03em;
+  }
+  .fg .req::after { content: ' *'; color: var(--danger); font-weight: 700; }
+  /* ponytail: .inline-toggle = inline radio/checkbox labels (mode switchers,
+     "Active?" style flags). Overrides the field-label uppercase/muted treatment
+     so the text reads naturally beside the control instead of a tiny header. */
+  .inline-toggle, label.inline-toggle, .fg .inline-toggle, .fg label.inline-toggle {
+    display: inline-flex !important; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 500; color: var(--text);
+    text-transform: none; letter-spacing: 0; margin-bottom: 0;
+    cursor: pointer; padding: 2px 0;
+  }
+  .inline-toggle input[type="radio"], .inline-toggle input[type="checkbox"] {
+    width: auto; min-height: 0; min-width: 0; margin: 0; cursor: pointer;
+    accent-color: var(--primary);
+  }
+  .inline-toggle b { color: var(--primary); font-weight: 600; }
+  /* Mode toggle row — holds the inline radios in a merged form (Masters,
+     Recipe, Reservation, Tool Movement, Adjustment type). Soft background band
+     so the toggle group reads as one control, not loose radios. */
+  .mode-row {
+    display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+    padding: 8px 12px; background: var(--primary-soft);
+    border-radius: var(--radius); margin-bottom: 10px;
+  }
+  .mode-row > .mode-label {
+    font-size: 11.5px; font-weight: 600; color: var(--primary);
+    text-transform: uppercase; letter-spacing: .04em; margin-right: 8px;
+  }
+  /* Inputs */
+  input, select, textarea {
+    padding: 8px 10px; border: 1px solid var(--gray-200); border-radius: var(--radius);
+    font-size: 13px; font-family: inherit; color: var(--text);
+    background: white; min-height: 34px;
+    transition: border-color .15s, box-shadow .15s;
+    /* Prevent selects/inputs from blowing out their grid cell when the
+       bootstrap finishes loading long option labels (long supplier names,
+       composite item labels, etc.). Without this, selects claim intrinsic
+       width = longest option, pushing the form horizontally. */
+    width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box;
+  }
+  /* Table-layout: fixed means column percentages are honored. Without this,
+     long <select> options can force any td wider than its th width hint. */
+  table.lines { table-layout: fixed; }
+  /* The .form root never allows horizontal overflow — wide tables scroll
+     independently inside their own wrapper, not the whole dialog. */
+  .form { overflow-x: hidden; }
+  table.lines { max-width: 100%; }
+  input:hover, select:hover, textarea:hover { border-color: var(--gray-400); }
+  input:focus, select:focus, textarea:focus {
+    outline: none; border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(31,78,121,.12);
+  }
+  textarea { min-height: 60px; resize: vertical; }
+  input.readonly, .readonly {
+    background: var(--gray-100); color: var(--text-muted); cursor: default;
+    border-color: var(--gray-100);
+  }
+  input[type=number] { text-align: right; font-variant-numeric: tabular-nums; }
+  /* ponytail: checkbox + radio must never inherit the generic input { width:100% }
+     rule — that stretches them to fill their parent, pushing the label text far
+     right and leaving the box looking orphaned. Also kill min-height so they
+     stay native-size. */
+  input[type="checkbox"], input[type="radio"] {
+    width: auto !important; min-width: 0 !important; max-width: none !important;
+    min-height: 0 !important; padding: 0; margin: 0;
+    accent-color: var(--primary); cursor: pointer; flex-shrink: 0;
+  }
+  /* Line-item tables */
+  table.lines {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    margin-top: 8px; background: white; border-radius: var(--radius);
+    overflow: hidden; box-shadow: var(--shadow-sm);
+  }
+  table.lines thead th {
+    background: var(--primary); color: white; padding: 9px 8px;
+    text-align: left; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  table.lines tbody tr:nth-child(even) { background: var(--gray-50); }
+  table.lines tbody tr:hover { background: var(--primary-soft); }
+  table.lines td { padding: 8px 8px; border-bottom: 1px solid var(--gray-100); }
+  table.lines tbody tr:last-child td { border-bottom: none; }
+  table.lines input, table.lines select {
+    width: 100%; padding: 5px 7px; font-size: 12px; min-height: 28px;
+  }
+  /* Sticky footer with actions */
+  .btn-row {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+    padding: 12px 22px; background: white;
+    border-top: 1px solid var(--gray-200); text-align: right;
+    box-shadow: 0 -2px 8px rgba(0,0,0,.04);
+    display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  }
+  button {
+    padding: 8px 18px; border: none; border-radius: var(--radius);
+    font-size: 13px; cursor: pointer; font-weight: 600; font-family: inherit;
+    transition: background .15s, transform .05s, box-shadow .15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  button:active { transform: translateY(1px); }
+  .btn-primary { background: var(--primary); color: white; box-shadow: var(--shadow-sm); }
+  .btn-primary:hover { background: var(--primary-dark); box-shadow: var(--shadow-md); }
+  .btn-primary::before { content: '✓'; font-weight: 700; }
+  .btn-secondary {
+    background: white; color: var(--text); border: 1px solid var(--gray-200);
+  }
+  .btn-secondary:hover { background: var(--gray-50); border-color: var(--gray-400); }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-danger:hover { background: #8b271c; }
+  .btn-small { padding: 4px 10px; font-size: 11px; font-weight: 500; }
+  .btn-add-row {
+    background: transparent; color: var(--primary);
+    border: 1.5px dashed var(--gray-400);
+    padding: 6px 14px; margin: 8px 0 0 0; font-weight: 500;
+  }
+  .btn-add-row:hover { background: var(--primary-soft); border-color: var(--primary); border-style: solid; }
+  .btn-add-row::before { content: '+ '; font-weight: 700; }
+  /* Status/toast messages */
+  #status-bar.err  { display: block; background: var(--danger); color: white; }
+  #status-bar.ok   { display: block; background: var(--ok); color: white; }
+  #status-bar.warn { display: block; background: var(--warn); color: white; }
+  .status {
+    padding: 10px 12px; margin-top: 10px; border-radius: var(--radius);
+    display: none; font-size: 12.5px;
+  }
+  .status.err { display: block; background: var(--danger-soft); color: var(--danger); border-left: 3px solid var(--danger); }
+  .status.ok  { display: block; background: var(--ok-soft); color: var(--ok); border-left: 3px solid var(--ok); }
+  /* Loading indicator */
+  .loading {
+    display: none; color: var(--text-muted); font-size: 12px;
+    font-style: normal; margin-right: 8px;
+  }
+  .loading.on { display: inline-flex; align-items: center; gap: 6px; }
+  .loading.on::before {
+    content: ''; width: 12px; height: 12px;
+    border: 2px solid var(--gray-200); border-top-color: var(--primary);
+    border-radius: 50%; animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* Helper hint text */
+  .hint {
+    color: var(--text-muted); font-size: 11.5px; margin-top: 6px;
+    padding: 8px 10px; background: var(--primary-soft); border-radius: var(--radius);
+    border-left: 3px solid var(--primary);
+  }
+  .hint b { color: var(--primary); }
+  /* Skip PDF toggle */
+  .skip-pdf {
+    display: inline-flex; align-items: center; gap: 6px; margin-right: 12px;
+    font-size: 12px; color: var(--text-muted); cursor: pointer;
+    padding: 6px 10px; border-radius: var(--radius);
+    transition: background .15s; white-space: nowrap; flex-shrink: 0;
+  }
+  .skip-pdf:hover { background: var(--gray-100); }
+  .skip-pdf input { margin: 0; min-height: auto; width: auto; }
+  /* Datalist styling hint (works in Chrome) */
+  input::-webkit-calendar-picker-indicator { opacity: .6; cursor: pointer; }
+
+  /* GRN L×W (col 3) + PCS (col 4), and PO Sqm/Unit (col 3) + PCS (col 4),
+     hidden by default. Shown only when the table has .board-mode class
+     (toggled by the "This doc has Board Type calculation" checkbox). */
+  #ain-lines:not(.board-mode) th:nth-child(3),
+  #ain-lines:not(.board-mode) td:nth-child(3),
+  #ain-lines:not(.board-mode) th:nth-child(4),
+  #ain-lines:not(.board-mode) td:nth-child(4),
+  #apo-lines:not(.board-mode) th:nth-child(3),
+  #apo-lines:not(.board-mode) td:nth-child(3),
+  #apo-lines:not(.board-mode) th:nth-child(4),
+  #apo-lines:not(.board-mode) td:nth-child(4) { display: none; }
+</style>
+</head>
+<body>
+
+<div id="status-bar" class="status"></div>
+
+<!-- ============================================================ Add Item -->
+<!-- ============================================================ Item (merged — New + Edit) -->
+<div id="form-master-item" class="form">
+  <h2>Item Master</h2>
+  <div class="mode-row">
+    <span class="mode-label">Mode:</span>
+    <label class="inline-toggle"><input type="radio" name="mitem-mode" value="new" checked onchange="onMasterModeChange('item')"> <b>New Item</b></label>
+    <label class="inline-toggle"><input type="radio" name="mitem-mode" value="edit" onchange="onMasterModeChange('item')"> <b>Edit Existing</b></label>
+  </div>
+
+  <!-- MODE: NEW -->
+  <div id="mitem-new-block">
+    <div class="grid2">
+      <div class="fg"><label class="req">Category</label><select id="ai-category"><option value="">-- select --</option></select></div>
+      <div class="fg"><label class="req">Item Name</label><input id="ai-name" type="text" placeholder="e.g., PHILIP HEAD"></div>
+      <div class="fg"><label>Size</label><input id="ai-size" type="text" placeholder="e.g., 13 X 6"></div>
+      <div class="fg"><label>Grade/Color</label><input id="ai-grade" type="text"></div>
+      <div class="fg"><label class="req">UOM</label><select id="ai-uom"><option value="">-- select --</option></select></div>
+      <div class="fg"><label class="req">Material Type</label><select id="ai-mattype"><option value="">-- select --</option></select></div>
+      <div class="fg"><label>Storage No.</label><input id="ai-storage" type="text"></div>
+      <div class="fg"><label>Rack No.</label><input id="ai-rack" type="text"></div>
+      <div class="fg"><label>HSN/SAC Code</label><input id="ai-hsn" type="text"></div>
+      <div class="fg"><label>Preferred Supplier(s)</label>
+        <input id="ai-supplier" type="text" list="supplier-list" placeholder="SUPP-0001 (or multiple: SUPP-0001, SUPP-0002)">
+        <datalist id="supplier-list"></datalist>
+      </div>
+      <div class="fg"><label>MIN LVL</label><input id="ai-min" type="number" min="0" step="0.01"></div>
+      <div class="fg"><label>MAX LVL</label><input id="ai-max" type="number" min="0" step="0.01"></div>
+      <div class="fg"><label>Opening Qty</label><input id="ai-opening" type="number" min="0" step="0.01" placeholder="0"></div>
+      <div class="fg"><label>Opening Amount (Rs.)</label><input id="ai-amount" type="number" min="0" step="0.01" placeholder="Total value — rate auto-computes"></div>
+      <div class="fg"><label>Avg Rate (Rs. per UOM)</label><input id="ai-rate" type="number" min="0" step="0.01" placeholder="Per-sheet / per-unit cost — leave blank if Amount filled"></div>
+    </div>
+    <p class="hint"><b>Opening Amount vs Avg Rate:</b> fill either one. If both Opening Qty and Opening Amount are set, Avg Rate = Amount ÷ Qty (overrides the Avg Rate field). Otherwise Avg Rate is used as-is. For board items, Avg Rate is <b>per sheet</b> (not per sqm) — the GRN form converts bill-style per-sqm rates to per-sheet automatically when you enter L × W (ft) per row.</p>
+  </div>
+
+  <!-- MODE: EDIT -->
+  <div id="mitem-edit-block" style="display:none;">
+    <div class="grid2">
+      <div class="fg"><label class="req">Pick Item</label><select id="eitem-picker" onchange="loadEditRecord('item')"><option value="">-- search & pick --</option></select></div>
+      <div class="fg"><label>Code</label><input id="eitem-code" type="text" readonly></div>
+      <div class="fg"><label>Item Name</label><input id="eitem-name" type="text"></div>
+      <div class="fg"><label>Size</label><input id="eitem-size" type="text"></div>
+      <div class="fg"><label>Grade/Color</label><input id="eitem-grade" type="text"></div>
+      <div class="fg"><label>UOM</label><select id="eitem-uom"><option value="">--</option></select></div>
+      <div class="fg"><label>Category</label><select id="eitem-category"><option value="">--</option></select></div>
+      <div class="fg"><label>Material Type</label><select id="eitem-mattype"><option value="">--</option></select></div>
+      <div class="fg"><label>Storage</label><input id="eitem-storage" type="text"></div>
+      <div class="fg"><label>Rack</label><input id="eitem-rack" type="text"></div>
+      <div class="fg"><label>HSN</label><input id="eitem-hsn" type="text"></div>
+      <div class="fg"><label>MIN LVL</label><input id="eitem-min" type="number"></div>
+      <div class="fg"><label>MAX LVL</label><input id="eitem-max" type="number"></div>
+      <div class="fg"><label>Avg Rate (Rs. per UOM)</label><input id="eitem-rate" type="number" min="0" step="0.01" placeholder="per-sheet for boards"></div>
+      <div class="fg"><label class="inline-toggle" style="margin-top:18px;"><input id="eitem-active" type="checkbox" checked> Active</label></div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <span class="loading" id="ai-loading">Saving...</span>
+    <span class="loading" id="eitem-loading">Saving...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitMasterItem()">Save</button>
+  </div>
+</div>
+
+<!-- ============================================================ SFG (merged — New + Edit) -->
+<div id="form-master-sfg" class="form">
+  <h2>SFG Master (Semi-Finished Good)</h2>
+  <div class="mode-row">
+    <span class="mode-label">Mode:</span>
+    <label class="inline-toggle"><input type="radio" name="msfg-mode" value="new" checked onchange="onMasterModeChange('sfg')"> <b>New SFG</b></label>
+    <label class="inline-toggle"><input type="radio" name="msfg-mode" value="edit" onchange="onMasterModeChange('sfg')"> <b>Edit Existing</b></label>
+  </div>
+
+  <div id="msfg-new-block">
+    <div class="grid2">
+      <div class="fg"><label class="req">Item Name</label><input id="as-name" type="text" placeholder="e.g., Metal Frame Leg"></div>
+      <div class="fg"><label>Size</label><input id="as-size" type="text"></div>
+      <div class="fg"><label>Color/Finish</label><input id="as-color" type="text"></div>
+      <div class="fg"><label class="req">UOM</label><select id="as-uom"><option value="">-- select --</option></select></div>
+      <div class="fg"><label>Storage No.</label><input id="as-storage" type="text"></div>
+      <div class="fg"><label>MIN LVL</label><input id="as-min" type="number" min="0" step="0.01"></div>
+      <div class="fg"><label>MAX LVL</label><input id="as-max" type="number" min="0" step="0.01"></div>
+      <div class="fg"><label>Opening Qty</label><input id="as-opening" type="number" min="0" step="0.01" placeholder="0"></div>
+    </div>
+    <p class="hint">Opening Qty seeds starting stock (logged as an "Opening" adjustment). Leave blank / 0 if none.</p>
+  </div>
+
+  <div id="msfg-edit-block" style="display:none;">
+    <div class="grid2">
+      <div class="fg"><label class="req">Pick SFG</label><select id="esfg-picker" onchange="loadEditRecord('sfg')"><option value="">-- search & pick --</option></select></div>
+      <div class="fg"><label>Code</label><input id="esfg-code" type="text" readonly></div>
+      <div class="fg"><label>Item Name</label><input id="esfg-name" type="text"></div>
+      <div class="fg"><label>Size</label><input id="esfg-size" type="text"></div>
+      <div class="fg"><label>Color/Finish</label><input id="esfg-color" type="text"></div>
+      <div class="fg"><label>UOM</label><select id="esfg-uom"><option value="">--</option></select></div>
+      <div class="fg"><label>Storage</label><input id="esfg-storage" type="text"></div>
+      <div class="fg"><label>MIN LVL</label><input id="esfg-min" type="number"></div>
+      <div class="fg"><label>MAX LVL</label><input id="esfg-max" type="number"></div>
+      <div class="fg"><label class="inline-toggle" style="margin-top:18px;"><input id="esfg-active" type="checkbox" checked> Active</label></div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <span class="loading" id="as-loading">Saving...</span>
+    <span class="loading" id="esfg-loading">Saving...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitMasterSfg()">Save</button>
+  </div>
+</div>
+
+<!-- ============================================================ Supplier (merged — New + Edit) -->
+<div id="form-master-supplier" class="form">
+  <h2>Supplier Master</h2>
+  <div class="mode-row">
+    <span class="mode-label">Mode:</span>
+    <label class="inline-toggle"><input type="radio" name="msup-mode" value="new" checked onchange="onMasterModeChange('supplier')"> <b>New Supplier</b></label>
+    <label class="inline-toggle"><input type="radio" name="msup-mode" value="edit" onchange="onMasterModeChange('supplier')"> <b>Edit Existing</b></label>
+  </div>
+
+  <div id="msup-new-block">
+    <div class="grid2">
+      <div class="fg"><label class="req">Firm Name</label><input id="asp-name" type="text"></div>
+      <div class="fg"><label>Category</label><input id="asp-cat" type="text"></div>
+      <div class="fg"><label>Contact Person</label><input id="asp-contact" type="text"></div>
+      <div class="fg"><label>Mobile No</label><input id="asp-mobile" type="text"></div>
+      <div class="fg"><label>Email</label><input id="asp-email" type="email"></div>
+      <div class="fg"><label>GST No</label><input id="asp-gst" type="text"></div>
+      <div class="fg" style="grid-column: 1/-1"><label>Address</label><textarea id="asp-address"></textarea></div>
+    </div>
+  </div>
+
+  <div id="msup-edit-block" style="display:none;">
+    <div class="grid2">
+      <div class="fg"><label class="req">Pick Supplier</label><select id="esup-picker" onchange="loadEditRecord('supplier')"><option value="">-- search & pick --</option></select></div>
+      <div class="fg"><label>Code</label><input id="esup-code" type="text" readonly></div>
+      <div class="fg"><label>Firm Name</label><input id="esup-name" type="text"></div>
+      <div class="fg"><label>Category</label><input id="esup-cat" type="text"></div>
+      <div class="fg"><label>Contact Person</label><input id="esup-contact" type="text"></div>
+      <div class="fg"><label>Mobile No</label><input id="esup-mobile" type="text"></div>
+      <div class="fg"><label>Email</label><input id="esup-email" type="email"></div>
+      <div class="fg"><label>GST No</label><input id="esup-gst" type="text"></div>
+      <div class="fg" style="grid-column: 1/-1"><label>Address</label><textarea id="esup-address"></textarea></div>
+      <div class="fg"><label class="inline-toggle" style="margin-top:18px;"><input id="esup-active" type="checkbox" checked> Active</label></div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <span class="loading" id="asp-loading">Saving...</span>
+    <span class="loading" id="esup-loading">Saving...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitMasterSupplier()">Save</button>
+  </div>
+</div>
+
+<!-- ============================================================ Job Worker (merged — New + Edit) -->
+<div id="form-master-jobworker" class="form">
+  <h2>Job Worker Master</h2>
+  <div class="mode-row">
+    <span class="mode-label">Mode:</span>
+    <label class="inline-toggle"><input type="radio" name="mjw-mode" value="new" checked onchange="onMasterModeChange('jobworker')"> <b>New Job Worker</b></label>
+    <label class="inline-toggle"><input type="radio" name="mjw-mode" value="edit" onchange="onMasterModeChange('jobworker')"> <b>Edit Existing</b></label>
+  </div>
+
+  <div id="mjw-new-block">
+    <div class="grid2">
+      <div class="fg"><label class="req">Firm Name</label><input id="ajw-name" type="text"></div>
+      <div class="fg"><label class="req">Process Type</label><select id="ajw-process"><option value="">-- select --</option></select></div>
+      <div class="fg"><label>Contact Person</label><input id="ajw-contact" type="text"></div>
+      <div class="fg"><label>Mobile No</label><input id="ajw-mobile" type="text"></div>
+      <div class="fg"><label>Email</label><input id="ajw-email" type="email"></div>
+      <div class="fg"><label>GST No</label><input id="ajw-gst" type="text"></div>
+      <div class="fg" style="grid-column: 1/-1"><label>Address</label><textarea id="ajw-address"></textarea></div>
+    </div>
+  </div>
+
+  <div id="mjw-edit-block" style="display:none;">
+    <div class="grid2">
+      <div class="fg"><label class="req">Pick Job Worker</label><select id="ejw-picker" onchange="loadEditRecord('jobworker')"><option value="">-- search & pick --</option></select></div>
+      <div class="fg"><label>Code</label><input id="ejw-code" type="text" readonly></div>
+      <div class="fg"><label>Firm Name</label><input id="ejw-name" type="text"></div>
+      <div class="fg"><label>Process Type</label><select id="ejw-process"><option value="">--</option></select></div>
+      <div class="fg"><label>Contact Person</label><input id="ejw-contact" type="text"></div>
+      <div class="fg"><label>Mobile No</label><input id="ejw-mobile" type="text"></div>
+      <div class="fg"><label>Email</label><input id="ejw-email" type="email"></div>
+      <div class="fg"><label>GST No</label><input id="ejw-gst" type="text"></div>
+      <div class="fg" style="grid-column: 1/-1"><label>Address</label><textarea id="ejw-address"></textarea></div>
+      <div class="fg"><label class="inline-toggle" style="margin-top:18px;"><input id="ejw-active" type="checkbox" checked> Active</label></div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <span class="loading" id="ajw-loading">Saving...</span>
+    <span class="loading" id="ejw-loading">Saving...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitMasterJobWorker()">Save</button>
+  </div>
+</div>
+
+<!-- ============================================================ Add Inward -->
+<div id="form-add-inward" class="form">
+  <h2>Add Inward (GRN)</h2>
+  <div class="grid3">
+    <div class="fg"><label class="req">Date</label><input id="ain-date" type="date"></div>
+    <div class="fg"><label class="req">Supplier</label><select id="ain-supplier"><option value="">-- select --</option></select></div>
+    <div class="fg"><label>Invoice No</label><input id="ain-invoice" type="text"></div>
+    <div class="fg"><label>Reference PO (auto-loads on select)</label>
+      <select id="ain-poref" onchange="loadFromPoRef()">
+        <option value="">-- no PO / manual entry --</option>
+      </select>
+    </div>
+    <div class="fg" style="grid-column:2/-1;"><span id="ain-poref-status" style="font-size:11px;color:#666;"></span></div>
+  </div>
+  <h3>Line Items</h3>
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;">
+    <input type="text" placeholder="🔍 Filter items in all rows (type code, name, size, or color)..." oninput="filterLineItemSelects('ain', this.value)" style="flex:1;padding:6px;">
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;cursor:pointer;padding:6px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);background:white;">
+      <input type="checkbox" id="ain-board-mode" onchange="toggleBoardMode('ain', this.checked)" style="min-height:auto;margin:0;">
+      This doc has Board Type calculation
+    </label>
+  </div>
+  <table class="lines" id="ain-lines" oninput="recalcTotals('ain')" onchange="recalcTotals('ain')">
+    <thead><tr>
+      <th style="width:18%">Item Code *</th><th>Description</th>
+      <th style="width:8%" title="Board length × width in feet. Standard trade sizes (4,6,7,8,10,12 ft) auto-use their actual mm dimensions (e.g. 8ft=2440mm, 6ft=1830mm → 4.4652 sqm). Non-standard sizes use literal ft→m conversion.">L × W (ft)</th>
+      <th style="width:7%" title="Pieces / sheets. Auto-computes Qty (SQM) when L × W are set">PCS</th>
+      <th style="width:8%">Qty *</th><th style="width:8%">Rate *</th>
+      <th style="width:12%" title="Pick % or Rs. flat">Disc</th><th style="width:7%">GST %</th>
+      <th>Remarks</th><th style="width:50px"></th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <button class="btn-add-row btn-small" onclick="addLine('ain')">+ Add Row</button>
+  <div id="ain-totals" style="margin:12px 0 6px;padding:10px 14px;background:var(--primary-soft);border-radius:var(--radius);font-size:13px;text-align:right;color:var(--text);">Enter line items to see totals…</div>
+  <div class="btn-row">
+    <label class="skip-pdf" title="Post the row without generating a PDF"><input type="checkbox" id="ain-skippdf"> Skip PDF</label>
+    <span class="loading" id="ain-loading">Saving GRN + PDF...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitInward()">Save &amp; Generate GRN</button>
+  </div>
+</div>
+
+<!-- ============================================================ Add Requisition -->
+<div id="form-add-requisition" class="form">
+  <h2>Add Material Requisition</h2>
+  <div class="grid3">
+    <div class="fg"><label class="req">Date</label><input id="areq-date" type="date"></div>
+    <div class="fg"><label>Project</label><input id="areq-project" type="text" list="project-list"></div>
+    <div class="fg"><label>Taken By</label><select id="areq-approver"><option value="">-- select --</option></select></div>
+  </div>
+  <datalist id="project-list"></datalist>
+  <datalist id="employee-list"></datalist>
+  <h3>Line Items</h3>
+  <input type="text" placeholder="🔍 Filter items in all rows (type code, name, size, or color)..." oninput="filterLineItemSelects('areq', this.value)" style="width:100%;margin-bottom:6px;padding:6px;">
+  <table class="lines" id="areq-lines">
+    <thead><tr>
+      <th style="width:22%">Item Code *</th><th>Description</th>
+      <th style="width:10%">Qty *</th><th>Purpose</th><th style="width:60px"></th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <button class="btn-add-row btn-small" onclick="addLine('areq')">+ Add Row</button>
+  <div class="btn-row">
+    <label class="skip-pdf" title="Post the row without generating a PDF"><input type="checkbox" id="areq-skippdf"> Skip PDF</label>
+    <span class="loading" id="areq-loading">Saving requisition...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitRequisition()">Save &amp; Generate Slip</button>
+  </div>
+</div>
+
+<!-- ============================================================ Job Work Outward -->
+<div id="form-add-jw-out" class="form">
+  <h2>Add Job Work Outward (Challan)</h2>
+  <div class="grid2">
+    <div class="fg"><label class="req">Date</label><input id="ajwo-date" type="date"></div>
+    <div class="fg"><label class="req">Job Worker</label><select id="ajwo-jw"><option value="">-- select --</option></select></div>
+  </div>
+  <h3>Lines (RM or SFG — both allowed)</h3>
+  <table class="lines" id="ajwo-lines">
+    <thead><tr>
+      <th style="width:20%">Code *</th><th>Description</th>
+      <th style="width:9%">Qty *</th><th style="width:9%">Weight (KG)</th>
+      <th style="width:14%">Expected Return</th>
+      <th>Remarks</th><th style="width:60px"></th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <button class="btn-add-row btn-small" onclick="addLine('ajwo')">+ Add Row</button>
+  <div class="btn-row">
+    <label class="skip-pdf" title="Post the row without generating a PDF"><input type="checkbox" id="ajwo-skippdf"> Skip PDF</label>
+    <span class="loading" id="ajwo-loading">Saving job work challan...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitJobWorkOut()">Save &amp; Generate JWC</button>
+  </div>
+</div>
+
+<!-- ============================================================ Add Purchase Order (multi-line) -->
+<div id="form-add-po" class="form">
+  <h2>Add Purchase Order (PO)</h2>
+  <div class="grid3">
+    <div class="fg"><label class="req">Date</label><input id="apo-date" type="date"></div>
+    <div class="fg"><label class="req">Supplier</label><select id="apo-supplier" onchange="onApoSupplierChange()"><option value="">-- select --</option></select></div>
+    <div class="fg"><label>Expected Delivery</label><input id="apo-delivery" type="date"></div>
+    <div class="fg" style="grid-column: 1/-1"><label>Remarks / Payment Terms</label><input id="apo-remarks" type="text" placeholder="e.g., Net 30, deliver to Thane warehouse"></div>
+  </div>
+  <div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:6px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);background:white;">
+      <input type="checkbox" id="apo-verify-party" onchange="toggleApoPartyBlock()" style="min-height:auto;margin:0;">
+      Verify / edit Supplier + Bill To details for this PO
+    </label>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:6px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);background:white;">
+      <input type="checkbox" id="apo-diff-ship" onchange="document.getElementById('apo-shipto-block').style.display=this.checked?'grid':'none';" style="min-height:auto;margin:0;">
+      Ship To is different from Bill To (deliver to site / project / another warehouse)
+    </label>
+  </div>
+  <div id="apo-party-block" style="display:none;margin-top:8px;padding:12px;background:var(--gray-50);border-radius:var(--radius);">
+    <h3 style="margin-top:0;">Supplier (from Supplier Master — edit to override on this PO only)</h3>
+    <div class="grid2">
+      <div class="fg"><label>Supplier Name</label><input id="apo-sup-name" type="text" placeholder="Auto-filled on supplier select"></div>
+      <div class="fg"><label>Supplier GSTIN</label><input id="apo-sup-gstin" type="text"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Supplier Address</label><textarea id="apo-sup-address"></textarea></div>
+      <div class="fg" style="grid-column:1/-1"><label>Supplier Contact</label><input id="apo-sup-contact" type="text" placeholder="Contact | Mobile | Email"></div>
+    </div>
+    <h3>Bill To (Your Company — from Config)</h3>
+    <div class="grid2">
+      <div class="fg"><label>Bill To Name</label><input id="apo-bill-name" type="text"></div>
+      <div class="fg"><label>Bill To GSTIN</label><input id="apo-bill-gstin" type="text"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Bill To Address</label><textarea id="apo-bill-address"></textarea></div>
+      <div class="fg" style="grid-column:1/-1"><label>Bill To Contact</label><input id="apo-bill-contact" type="text"></div>
+    </div>
+    <p class="hint">Fields are pre-filled from Supplier Master (top) and Config (bottom). Edit only for this PO — masters stay unchanged. Leave blank to skip a field on the PDF.</p>
+  </div>
+  <div id="apo-shipto-block" class="grid2" style="display:none;margin-top:8px;padding:10px 12px;background:var(--gray-50);border-radius:var(--radius);">
+    <div class="fg"><label>Ship To Name</label><input id="apo-shipto-name" type="text" placeholder="e.g., 3 Star Projects — Silvassa Site"></div>
+    <div class="fg"><label>Ship To GSTIN (optional)</label><input id="apo-shipto-gstin" type="text"></div>
+    <div class="fg" style="grid-column:1/-1"><label>Ship To Address</label><textarea id="apo-shipto-address" placeholder="Full delivery address"></textarea></div>
+    <div class="fg" style="grid-column:1/-1"><label>Ship To Contact (optional)</label><input id="apo-shipto-contact" type="text" placeholder="Site in-charge name + mobile"></div>
+  </div>
+  <h3>Line Items</h3>
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;">
+    <input type="text" placeholder="🔍 Filter items in all rows (type code, name, size, or color)..." oninput="filterLineItemSelects('apo', this.value)" style="flex:1;padding:6px;">
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;cursor:pointer;padding:6px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);background:white;">
+      <input type="checkbox" id="apo-board-mode" onchange="toggleBoardMode('apo', this.checked)" style="min-height:auto;margin:0;">
+      This doc has Board Type calculation
+    </label>
+  </div>
+  <table class="lines" id="apo-lines" oninput="recalcTotals('apo')" onchange="recalcTotals('apo')">
+    <thead><tr>
+      <th style="width:18%">Item Code *</th><th>Description</th>
+      <th style="width:7%" title="Sqm per board. Auto-fills from Item Master. Override here for one-off items.">Sqm/Unit</th>
+      <th style="width:7%" title="Pieces / count. Auto-computes SQM when Sqm/Unit is set">PCS</th>
+      <th style="width:8%">Qty *</th><th style="width:8%">Rate *</th>
+      <th style="width:12%" title="Pick % or Rs. flat">Disc</th><th style="width:7%">GST %</th>
+      <th>Remarks</th><th style="width:50px"></th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <button class="btn-add-row btn-small" onclick="addLine('apo')">+ Add Row</button>
+  <div id="apo-totals" style="margin:12px 0 6px;padding:10px 14px;background:var(--primary-soft);border-radius:var(--radius);font-size:13px;text-align:right;color:var(--text);">Enter line items to see totals…</div>
+  <div class="btn-row">
+    <label class="skip-pdf" title="Post the row without generating a PDF"><input type="checkbox" id="apo-skippdf"> Skip PDF</label>
+    <span class="loading" id="apo-loading">Saving PO + PDF...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitPo()">Save &amp; Generate PO</button>
+  </div>
+</div>
+
+<!-- ============================================================ Amend Purchase Order -->
+<div id="form-amend-po" class="form">
+  <h2>Amend Purchase Order</h2>
+  <p class="hint">Pick an existing PO, edit line qty / rate / discount / GST, then Save. The PO's Rev counter bumps on each amendment. The original PDF stays in Drive as audit trail; a new PDF with <code>-R{n}</code> suffix is generated. <b>Blocked</b> by default if the PO already has GRN rows — you'll get a confirm dialog if so.</p>
+  <div class="grid2">
+    <div class="fg" style="grid-column: 1/-1"><label class="req">PO to Amend</label>
+      <select id="amp-po" onchange="onAmendPoSelect()"><option value="">-- pick PO --</option></select>
+    </div>
+    <div class="fg"><label>Supplier</label><input id="amp-sup" type="text" readonly></div>
+    <div class="fg"><label>Current Status</label><input id="amp-status" type="text" readonly></div>
+    <div class="fg"><label>PO Date</label><input id="amp-date" type="date"></div>
+    <div class="fg"><label>Delivery Date</label><input id="amp-deldate" type="date"></div>
+    <div class="fg" style="grid-column: 1/-1"><label>Remarks</label><input id="amp-remarks" type="text"></div>
+    <div class="fg" style="grid-column: 1/-1"><span id="amp-rev-info" style="font-size:12px;color:var(--text-muted);"></span></div>
+  </div>
+  <h3>Line Items <span id="amp-lines-caption" style="font-weight:normal;font-size:12px;color:var(--text-muted);"></span></h3>
+  <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px;">
+    <input type="text" placeholder="🔍 Filter items in all rows..." oninput="filterLineItemSelects('amp', this.value)" style="flex:1;padding:6px;">
+  </div>
+  <table class="lines" id="amp-lines" oninput="recalcTotals('amp')" onchange="recalcTotals('amp')">
+    <thead><tr>
+      <th style="width:20%">Item Code *</th><th>Description</th>
+      <th style="width:8%">Qty *</th><th style="width:8%">Rate *</th>
+      <th style="width:12%" title="Pick % or Rs. flat">Disc</th><th style="width:7%">GST %</th>
+      <th style="width:8%" title="Qty already received against this line — readonly">Recv</th>
+      <th style="width:50px"></th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <button class="btn-add-row btn-small" onclick="addAmpLine()">+ Add Row</button>
+  <div id="amp-totals" style="margin:12px 0 6px;padding:10px 14px;background:var(--primary-soft);border-radius:var(--radius);font-size:13px;text-align:right;color:var(--text);">Pick a PO above to load its lines…</div>
+  <div class="btn-row">
+    <label class="skip-pdf" title="Post the row without generating a PDF"><input type="checkbox" id="amp-skippdf"> Skip PDF</label>
+    <span class="loading" id="amp-loading">Saving amendment...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitAmendPo()">Save Amendment</button>
+  </div>
+</div>
+
+<!-- ============================================================ Add Delivery (Internal Site / Customer) -->
+<div id="form-add-fg-delivery" class="form">
+  <h2>Add Delivery Challan</h2>
+  <div class="grid3">
+    <div class="fg"><label class="req">Type</label>
+      <select id="afgd-type" onchange="onFgdTypeChange()">
+        <option value="Customer">Customer (with GST/vehicle/bill-to)</option>
+        <option value="Internal">Internal Site (project delivery)</option>
+      </select>
+    </div>
+    <div class="fg"><label class="req">Date</label><input id="afgd-date" type="date"></div>
+    <div class="fg"><label>DC No (leave blank to auto-generate)</label><input id="afgd-manual-dcno" type="text" placeholder="e.g., 3SP/DC/26-27/12"></div>
+    <div class="fg"><label class="req" id="afgd-customer-label">Customer Name</label><input id="afgd-customer" type="text" placeholder="e.g., NEURON ENERGY PVT LTD"></div>
+    <div class="fg"><label>Project</label><input id="afgd-project" type="text" list="project-list"></div>
+    <div class="fg afgd-cust-only"><label>Payment Terms</label><input id="afgd-payment" type="text" placeholder="e.g., 50% advance, 50% on delivery"></div>
+    <div class="fg afgd-cust-only"><label>Other Reference(s)</label><input id="afgd-otherref" type="text" placeholder="PO ref, quote no, etc."></div>
+  </div>
+  <div class="grid2 afgd-cust-only" style="margin-top:6px;">
+    <div class="fg">
+      <label class="req">Bill To (address)</label>
+      <textarea id="afgd-billto" rows="3" placeholder="Address..."></textarea>
+      <input id="afgd-billto-gstin" type="text" placeholder="Bill To GSTIN" style="margin-top:4px;">
+    </div>
+    <div class="fg">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <label style="margin-bottom:0;">Ship To (address)</label>
+        <label class="inline-toggle" style="font-size:11.5px;color:var(--text-muted);"><input type="checkbox" id="afgd-samebill" onchange="onFgdSameAsBill()"> Same as Bill To</label>
+      </div>
+      <textarea id="afgd-shipto" rows="3" placeholder="Address..."></textarea>
+      <input id="afgd-shipto-gstin" type="text" placeholder="Ship To GSTIN" style="margin-top:4px;">
+    </div>
+  </div>
+  <div class="grid3 afgd-cust-only" style="margin-top:6px;">
+    <div class="fg"><label>Vehicle No</label><input id="afgd-vehicle" type="text" placeholder="e.g., MH-04-AB-1234"></div>
+    <div class="fg"><label>Driver</label><input id="afgd-driver" type="text"></div>
+    <div class="fg"><label>LR No</label><input id="afgd-lr" type="text"></div>
+    <div class="fg"><label>E-Way Bill No</label><input id="afgd-eway" type="text"></div>
+  </div>
+  <h3 style="margin-top:14px;">Items to be Delivered (Main)</h3>
+  <input type="text" placeholder="🔍 Filter FG/SFG in all rows (type code, name, size, or color)..." oninput="filterLineItemSelects('afgd-main', this.value)" style="width:100%;margin-bottom:6px;padding:6px;">
+  <table class="lines" id="afgd-main-lines">
+    <thead><tr>
+      <th style="width:22%">FG Code (or Manual)</th>
+      <th>Description *</th>
+      <th style="width:9%">Qty *</th>
+      <th style="width:12%">Weight (KG)</th>
+      <th>Remark</th>
+      <th style="width:50px"></th>
+    </tr></thead><tbody></tbody>
+  </table>
+  <button class="btn-add-row btn-small" onclick="addFgdMainLine()">+ Add Main Row</button>
+  <h3 style="margin-top:14px;">Hardware List (optional — deducts from Item stock)</h3>
+  <input type="text" placeholder="🔍 Filter hardware items in all rows..." oninput="filterLineItemSelects('afgd-hw', this.value)" style="width:100%;margin-bottom:6px;padding:6px;">
+  <table class="lines" id="afgd-hw-lines">
+    <thead><tr>
+      <th style="width:22%">Item Code (or Manual)</th>
+      <th>Description *</th>
+      <th style="width:9%">Qty</th>
+      <th>Remark</th>
+      <th style="width:50px"></th>
+    </tr></thead><tbody></tbody>
+  </table>
+  <button class="btn-add-row btn-small" onclick="addFgdHwLine()">+ Add Hardware Row</button>
+  <p class="hint">Hardware items with a valid Item Code auto-deduct from RM stock. Use "-- Manual --" to add ad-hoc items (no stock deduction). Excess returned from site can be recorded in the FG Delivery Lines sheet's "Returned Qty" column.</p>
+  <div class="btn-row">
+    <label class="skip-pdf" title="Post the row without generating a PDF"><input type="checkbox" id="afgd-skippdf"> Skip PDF</label>
+    <span class="loading" id="afgd-loading">Saving DC + PDF...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitFgDelivery()">Save &amp; Generate DC</button>
+  </div>
+</div>
+
+<!-- ============================================================ Return from Site -->
+<div id="form-site-return" class="form">
+  <h2>Return from Site (DC-linked)</h2>
+  <p class="hint">Picks an existing Delivery Challan and lets you bring surplus material back. Returned Qty is added to col J of the matching FG Delivery Lines row; snapshot refreshes automatically. Partial returns and repeat returns against the same DC line are supported.</p>
+  <div class="grid2">
+    <div class="fg"><label class="req">Return Date</label><input id="asr-date" type="date"></div>
+    <div class="fg"><label class="req">Delivery Challan</label><select id="asr-dc" onchange="onSiteReturnDcSelect()"><option value="">-- select recent DC --</option></select></div>
+  </div>
+  <h3>DC Lines <span id="asr-lines-caption" style="font-weight:normal;font-size:12px;color:var(--text-muted);"></span></h3>
+  <table class="lines" id="asr-lines">
+    <thead><tr>
+      <th style="width:5%">#</th>
+      <th style="width:10%">Section</th>
+      <th style="width:12%">Code</th>
+      <th>Description</th>
+      <th style="width:8%">Qty Out</th>
+      <th style="width:8%">Already Returned</th>
+      <th style="width:8%">Still Out</th>
+      <th style="width:10%">Return Now *</th>
+      <th style="width:6%">UOM</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <div id="asr-empty" style="margin:10px 0;padding:14px;background:var(--gray-50);border-radius:var(--radius);text-align:center;color:var(--text-muted);font-style:italic;">Pick a Delivery Challan above to load its lines.</div>
+  <div class="btn-row">
+    <span class="loading" id="asr-loading">Posting return...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitSiteReturn()">Post Return</button>
+  </div>
+</div>
+
+<!-- ============================================================ Request for Quotation -->
+<div id="form-add-rfq" class="form">
+  <h2>Request for Quotation (RFQ)</h2>
+  <p class="hint">Broadcast quote request — no vendor selected. The PDF lists items with photos, sizes, colours and required quantities. Share the PDF with multiple suppliers to collect quotes.</p>
+  <div class="grid2">
+    <div class="fg"><label class="req">Date</label><input id="arfq-date" type="date"></div>
+    <div class="fg"><label>Quote Validity (optional)</label><input id="arfq-valid" type="date" title="Ask vendors to keep quote valid until this date"></div>
+    <div class="fg" style="grid-column:1/-1"><label>Purpose / Notes for Vendors</label><input id="arfq-purpose" type="text" placeholder="e.g., Urgent office fit-out — deliver by 15-Sep"></div>
+  </div>
+  <h3>Items Required</h3>
+  <input type="text" placeholder="🔍 Filter items in all rows (type code, name, size, or color)..." oninput="filterLineItemSelects('arfq', this.value)" style="width:100%;margin-bottom:6px;padding:6px;">
+  <table class="lines" id="arfq-lines">
+    <thead><tr>
+      <th style="width:24%">Item Code *</th>
+      <th>Description</th>
+      <th style="width:10%">Size</th>
+      <th style="width:10%">Colour</th>
+      <th style="width:9%">Qty Required *</th>
+      <th>Remarks</th>
+      <th style="width:50px"></th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <button class="btn-add-row btn-small" onclick="addLine('arfq')">+ Add Row</button>
+  <div class="btn-row">
+    <label class="skip-pdf"><input type="checkbox" id="arfq-skippdf"> Skip PDF</label>
+    <span class="loading" id="arfq-loading">Saving RFQ + PDF...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitRfq()">Save &amp; Generate RFQ</button>
+  </div>
+</div>
+
+<!-- ============================================================ Bulk Adjustment (set or add/subtract per row) -->
+<!-- ============================================================ Reserve Stock -->
+<!-- ============================================================ Reservation (merged — New + Release/Consume) -->
+<div id="form-reservation" class="form">
+  <h2>Reservation</h2>
+  <div class="mode-row">
+    <span class="mode-label">Mode:</span>
+    <label class="inline-toggle"><input type="radio" name="res-mode" value="new" checked onchange="onReservationModeChange()"> <b>New Reservation</b> — soft-lock stock</label>
+    <label class="inline-toggle"><input type="radio" name="res-mode" value="release" onchange="onReservationModeChange()"> <b>Release / Consume</b> — update existing</label>
+  </div>
+
+  <!-- MODE: NEW -->
+  <div id="res-new-block">
+    <p class="hint">Soft-lock stock for a specific customer / project / order. Reserved stock is subtracted from Available (but stays in physical inventory). Manual release only.</p>
+    <div class="grid2">
+      <div class="fg"><label class="req">Date</label><input id="ares-date" type="date"></div>
+      <div class="fg"><label class="req">Item / SFG / FG Code</label>
+        <select id="ares-code"><option value="">-- select --</option></select>
+      </div>
+      <div class="fg"><label class="req">Qty to Reserve</label><input id="ares-qty" type="number" step="0.01" min="0.01"></div>
+      <div class="fg"><label>UOM</label><input id="ares-uom" type="text" readonly></div>
+      <div class="fg" style="grid-column: 1/-1"><label class="req">For (Reference)</label>
+        <input id="ares-for" type="text" placeholder="e.g., Customer XYZ / PO-123 / Project Silvassa Site">
+      </div>
+      <div class="fg" style="grid-column: 1/-1"><label>Notes</label><input id="ares-notes" type="text"></div>
+    </div>
+  </div>
+
+  <!-- MODE: RELEASE -->
+  <div id="res-release-block" style="display:none;">
+    <p class="hint">Pick an active reservation. Mark it <b>Released</b> (freed back to available stock) or <b>Consumed</b> (fulfilled by an outward transaction).</p>
+    <div class="grid2">
+      <div class="fg" style="grid-column: 1/-1"><label class="req">Active Reservation</label>
+        <select id="rres-picker" onchange="onReleaseResPickerChange()"><option value="">-- pick reservation --</option></select>
+      </div>
+      <div class="fg"><label>Code</label><input id="rres-code" type="text" readonly></div>
+      <div class="fg"><label>Qty</label><input id="rres-qty" type="text" readonly></div>
+      <div class="fg" style="grid-column: 1/-1"><label>For</label><input id="rres-for" type="text" readonly></div>
+      <div class="fg"><label class="req">New Status</label>
+        <select id="rres-status">
+          <option value="">-- select --</option>
+          <option>Released</option>
+          <option>Consumed</option>
+        </select>
+      </div>
+      <div class="fg"></div>
+      <div class="fg" style="grid-column: 1/-1"><label>Notes (optional)</label><input id="rres-notes" type="text" placeholder="e.g., Order cancelled / DC-0042 issued"></div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <span class="loading" id="ares-loading">Saving reservation...</span>
+    <span class="loading" id="rres-loading">Updating...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitReservation()">Save</button>
+  </div>
+</div>
+
+<!-- ============================================================ QC Record -->
+<div id="form-add-qc-record" class="form">
+  <h2>QC Record</h2>
+  <div class="grid3">
+    <div class="fg"><label class="req">Source Type</label>
+      <select id="qc-source" onchange="onQcSourceChange()">
+        <option value="">-- select --</option>
+        <option>GRN</option>
+        <option>JWGRN</option>
+        <option>Pre-Dispatch DC</option>
+        <option>Manual</option>
+      </select>
+    </div>
+    <div class="fg"><label class="req">Reference No</label>
+      <select id="qc-refno" onchange="onQcRefNoChange()"><option value="">-- pick source first --</option></select>
+    </div>
+    <div class="fg"><label class="req">Reference Line (Material)</label>
+      <select id="qc-refline" onchange="onQcRefLineChange()"><option value="">-- pick ref first --</option></select>
+    </div>
+  </div>
+
+  <h3 style="margin-top:14px;">Basic Details</h3>
+  <div class="grid3">
+    <div class="fg"><label>Vendor / Party Name</label><input id="qc-vendor" type="text"></div>
+    <div class="fg"><label>Material Name</label><input id="qc-material" type="text"></div>
+    <div class="fg"><label>PO No</label><input id="qc-po" type="text"></div>
+    <div class="fg"><label>Delivery Date</label><input id="qc-deldate" type="date"></div>
+    <div class="fg"><label>Checked By (Basic)</label><input id="qc-basic-by" type="text" list="employee-list"></div>
+  </div>
+
+  <h3 style="margin-top:14px;">Quantity Check</h3>
+  <div class="grid3">
+    <div class="fg"><label>Ordered Qty</label><input id="qc-orderedqty" type="number" step="0.01"></div>
+    <div class="fg"><label>Received Qty</label><input id="qc-receivedqty" type="number" step="0.01"></div>
+    <div class="fg"><label>Short / Excess</label><input id="qc-shortexcess" type="text" placeholder="auto"></div>
+    <div class="fg"><label>Status</label>
+      <select id="qc-status-qty"><option value="">--</option><option>Pass</option><option>Fail</option><option>Hold</option></select>
+    </div>
+    <div class="fg"><label>Checked By</label><input id="qc-qty-by" type="text" list="employee-list"></div>
+  </div>
+
+  <h3 style="margin-top:14px;">Visual Inspection</h3>
+  <div class="grid3">
+    <div class="fg"><label>Any Damage</label>
+      <select id="qc-damage"><option value="">--</option><option>No Damage</option><option>Minor Damage</option><option>Major Damage</option></select>
+    </div>
+    <div class="fg"><label>Packaging Condition</label>
+      <select id="qc-packaging"><option value="">--</option><option>No Damage</option><option>Minor Damage</option><option>Major Damage</option></select>
+    </div>
+    <div class="fg"><label>Leakage / Breakage</label>
+      <select id="qc-leakage"><option value="">--</option><option>Yes</option><option>No</option><option>Not Applicable</option></select>
+    </div>
+    <div class="fg"><label>Proper Labeling</label>
+      <select id="qc-labeling"><option value="">--</option><option>Yes</option><option>No</option><option>Not Applicable</option></select>
+    </div>
+    <div class="fg"><label>Status</label>
+      <select id="qc-status-visual"><option value="">--</option><option>Pass</option><option>Fail</option><option>Hold</option></select>
+    </div>
+    <div class="fg"><label>Checked By</label><input id="qc-visual-by" type="text" list="employee-list"></div>
+  </div>
+
+  <h3 style="margin-top:14px;">Specification Check</h3>
+  <div class="grid3">
+    <div class="fg"><label>Size/Dim Planned</label><input id="qc-size-plan" type="text"></div>
+    <div class="fg"><label>Size/Dim Actual</label><input id="qc-size-actual" type="text"></div>
+    <div class="fg"></div>
+    <div class="fg"><label>Weight Planned</label><input id="qc-weight-plan" type="text"></div>
+    <div class="fg"><label>Weight Actual</label><input id="qc-weight-actual" type="text"></div>
+    <div class="fg"></div>
+    <div class="fg"><label>Colour/Finish Planned</label><input id="qc-colour-plan" type="text"></div>
+    <div class="fg"><label>Colour/Finish Actual</label>
+      <select id="qc-colour-actual"><option value="">--</option><option>Match Approved Sample</option><option>Slight Variation</option><option>Wrong Shade</option><option>Not Applicable</option></select>
+    </div>
+    <div class="fg"></div>
+    <div class="fg"><label>Material Grade Planned</label><input id="qc-grade-plan" type="text"></div>
+    <div class="fg"><label>Material Grade Actual</label>
+      <select id="qc-grade-actual"><option value="">--</option><option>Correct</option><option>Incorrect</option></select>
+    </div>
+    <div class="fg"></div>
+    <div class="fg"><label>Status</label>
+      <select id="qc-status-spec"><option value="">--</option><option>Pass</option><option>Fail</option><option>Hold</option></select>
+    </div>
+    <div class="fg"><label>Checked By</label><input id="qc-spec-by" type="text" list="employee-list"></div>
+  </div>
+
+  <h3 style="margin-top:14px;">Functional / Performance</h3>
+  <div class="grid3">
+    <div class="fg"><label>Does It Work as Expected</label>
+      <select id="qc-works"><option value="">--</option><option>Yes</option><option>No</option><option>Not Applicable</option></select>
+    </div>
+    <div class="fg"><label>Trial / Sample Test Done</label>
+      <select id="qc-trial"><option value="">--</option><option>Yes</option><option>No</option><option>Not Applicable</option></select>
+    </div>
+    <div class="fg"><label>Output Quality Acceptable</label>
+      <select id="qc-output"><option value="">--</option><option>Yes</option><option>No</option><option>Not Applicable</option></select>
+    </div>
+    <div class="fg"><label>Document Attached</label>
+      <select id="qc-doc"><option value="">--</option><option>Yes</option><option>No</option><option>Not Applicable</option></select>
+    </div>
+  </div>
+
+  <h3 style="margin-top:14px;">Overall Verdict</h3>
+  <div class="grid3">
+    <div class="fg"><label class="req">Overall Outcome</label>
+      <select id="qc-outcome" style="font-weight:bold;">
+        <option value="">-- select --</option>
+        <option>Accept</option>
+        <option>Reject</option>
+        <option>Rework</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <span class="loading" id="qc-loading">Saving QC record...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitQcRecord()">Save QC Record</button>
+  </div>
+</div>
+
+<!-- ============================================================ Adjustment (merged — single or multi-line) -->
+<div id="form-adjustment" class="form">
+  <h2>Adjustment</h2>
+  <div class="grid2">
+    <div class="fg"><label class="req">Date</label><input id="badj-date" type="date"></div>
+    <div class="fg"><label class="req">Type (applies to all lines)</label>
+      <select id="badj-type">
+        <option value="">-- select --</option>
+        <option>Opening</option><option>Damage</option>
+        <option>Correction</option><option>Return</option><option>Other</option>
+      </select>
+    </div>
+  </div>
+  <h3 style="margin-top:14px;">Lines (add one for a single adjustment, more for bulk)</h3>
+  <table class="lines" id="badj-lines">
+    <thead><tr>
+      <th style="width:8%" title="Tick to add/subtract instead of setting to a final value">±</th>
+      <th style="width:26%">Item / SFG Code *</th>
+      <th>Description</th>
+      <th style="width:13%">Quantity *</th>
+      <th style="width:12%">UOM</th>
+      <th style="width:22%">Remarks</th>
+      <th style="width:50px"></th>
+    </tr></thead><tbody></tbody>
+  </table>
+  <button class="btn-add-row btn-small" onclick="addBadjRow()">+ Add Row</button>
+  <p class="hint"><b>Default (set-to count):</b> the quantity you enter becomes the item's <b>physical</b> stock count (includes any reserved units) — equivalent to a physical reconciliation. <b>Tick ±:</b> the quantity is added (positive) or subtracted (negative) from current physical stock.<br>
+    <b>Type semantics:</b> <b>Opening</b> seeds a starting balance. <b>Damage</b> / <b>Return</b> / <b>Other</b> record a signed delta (tick ±). <b>Correction</b> is the physical count you measured — system computes the delta.</p>
+  <div class="btn-row">
+    <span class="loading" id="badj-loading">Saving...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitAdjustment()">Save Adjustment</button>
+  </div>
+</div>
+
+<!-- ============================================================ Job Work Inward -->
+<div id="form-add-jw-in" class="form">
+  <h2>Add Job Work Inward (GRN)</h2>
+  <div class="grid2">
+    <div class="fg"><label class="req">Date</label><input id="ajwi-date" type="date"></div>
+    <div class="fg"><label class="req">Reference Challan (open)</label><select id="ajwi-ref" onchange="onJwiRefSelect()"><option value="">-- select --</option></select></div>
+  </div>
+  <h3>Lines (auto-populated from referenced challan — edit qty if partial)</h3>
+  <table class="lines" id="ajwi-lines">
+    <thead><tr>
+      <th style="width:20%">Code</th><th>Description</th>
+      <th style="width:10%">Qty Sent</th><th style="width:10%">Qty Received *</th>
+      <th style="width:10%">Yield Loss</th><th style="width:10%">Rejection</th>
+      <th>Remarks</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="btn-row">
+    <label class="skip-pdf" title="Post the row without generating a PDF"><input type="checkbox" id="ajwi-skippdf"> Skip PDF</label>
+    <span class="loading" id="ajwi-loading">Saving JWGRN...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitJobWorkIn()">Save &amp; Generate JWGRN</button>
+  </div>
+</div>
+
+<!-- ============================================================ Add FG -->
+<!-- ============================================================ FG (merged — New + Edit) -->
+<div id="form-master-fg" class="form">
+  <h2>FG Master (Finished Good)</h2>
+  <div class="mode-row">
+    <span class="mode-label">Mode:</span>
+    <label class="inline-toggle"><input type="radio" name="mfg-mode" value="new" checked onchange="onMasterModeChange('fg')"> <b>New FG</b></label>
+    <label class="inline-toggle"><input type="radio" name="mfg-mode" value="edit" onchange="onMasterModeChange('fg')"> <b>Edit Existing</b></label>
+  </div>
+
+  <div id="mfg-new-block">
+    <div class="grid2">
+      <div class="fg"><label class="req">Item Name</label><input id="afg-name" type="text" placeholder="e.g., 2 Drawer Pedestal"></div>
+      <div class="fg"><label>Size</label><input id="afg-size" type="text" placeholder="e.g., 800 x 500 x 710"></div>
+      <div class="fg"><label>Colour</label><input id="afg-colour" type="text" placeholder="e.g., Frosty White"></div>
+      <div class="fg"><label>Finish</label><input id="afg-finish" type="text" placeholder="e.g., Matte"></div>
+      <div class="fg"><label class="req">UOM</label><select id="afg-uom"><option value="">-- select --</option></select></div>
+      <div class="fg"><label>Opening Qty</label><input id="afg-opening" type="number" min="0" step="0.01" placeholder="0"></div>
+    </div>
+    <p class="hint">Opening Qty seeds starting stock. Written to FG Master's Opening Qty column. Leave blank / 0 if none.</p>
+  </div>
+
+  <div id="mfg-edit-block" style="display:none;">
+    <div class="grid2">
+      <div class="fg"><label class="req">Pick FG</label><select id="efg-picker" onchange="loadEditRecord('fg')"><option value="">-- search & pick --</option></select></div>
+      <div class="fg"><label>Code</label><input id="efg-code" type="text" readonly></div>
+      <div class="fg"><label>Item Name</label><input id="efg-name" type="text"></div>
+      <div class="fg"><label>Size</label><input id="efg-size" type="text"></div>
+      <div class="fg"><label>Colour</label><input id="efg-colour" type="text"></div>
+      <div class="fg"><label>Finish</label><input id="efg-finish" type="text"></div>
+      <div class="fg"><label>UOM</label><select id="efg-uom"><option value="">--</option></select></div>
+      <div class="fg"><label class="inline-toggle" style="margin-top:18px;"><input id="efg-active" type="checkbox" checked> Active</label></div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <span class="loading" id="afg-loading">Saving...</span>
+    <span class="loading" id="efg-loading">Saving...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitMasterFg()">Save</button>
+  </div>
+</div>
+
+<!-- ============================================================ Add Tool -->
+<div id="form-add-tool" class="form">
+  <h2>Add Tool / Machine</h2>
+  <div class="grid2">
+    <div class="fg"><label class="req">Item Name</label><input id="atool-name" type="text" placeholder="e.g., Impact Drill"></div>
+    <div class="fg"><label class="req">Type</label>
+      <select id="atool-type">
+        <option value="">-- select --</option>
+        <option>Power Tool</option><option>Hand Tool</option><option>Machine</option>
+        <option>Consumable</option><option>Other</option>
+      </select>
+    </div>
+    <div class="fg"><label>Serial No</label><input id="atool-serial" type="text"></div>
+    <div class="fg"><label>Purchase Date</label><input id="atool-pdate" type="date"></div>
+    <div class="fg"><label>Purchase Value (Rs.)</label><input id="atool-pval" type="number" min="0"></div>
+    <div class="fg"><label>Vendor</label><input id="atool-vendor" type="text"></div>
+  </div>
+  <p class="hint">Status defaults to "In Store". Use "Issue Tool" menu to give it to someone.</p>
+  <div class="btn-row">
+    <span class="loading" id="atool-loading">Saving...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitAddTool()">Save Tool</button>
+  </div>
+</div>
+
+<!-- ============================================================ Issue Tool -->
+<!-- ============================================================ Tool Movement (merged — Issue + Return) -->
+<div id="form-tool-movement" class="form">
+  <h2>Tool Movement</h2>
+  <div class="mode-row">
+    <span class="mode-label">Action:</span>
+    <label class="inline-toggle"><input type="radio" name="tool-action" value="issue" checked onchange="onToolActionChange()"> <b>Issue</b> — send tool out to a person/site</label>
+    <label class="inline-toggle"><input type="radio" name="tool-action" value="return" onchange="onToolActionChange()"> <b>Return</b> — record incoming tool</label>
+  </div>
+
+  <!-- ACTION: ISSUE -->
+  <div id="tool-issue-block">
+    <div class="grid2">
+      <div class="fg"><label class="req">Date</label><input id="itool-date" type="date"></div>
+      <div class="fg"><label class="req">Tool (only In-Store shown)</label><select id="itool-tool"><option value="">-- select --</option></select></div>
+      <div class="fg"><label class="req">Person / Site</label><input id="itool-person" type="text" placeholder="e.g., Ajay OR Silvassa Site"></div>
+      <div class="fg"><label>Expected Return</label><input id="itool-return" type="date"></div>
+      <div class="fg"><label class="inline-toggle" style="margin-top:18px;"><input id="itool-atsite" type="checkbox"> Going to a Site (not a person)</label></div>
+      <div class="fg" style="grid-column: 1/-1"><label>Purpose</label><input id="itool-purpose" type="text"></div>
+      <div class="fg" style="grid-column: 1/-1"><label>Remarks</label><input id="itool-remarks" type="text"></div>
+    </div>
+  </div>
+
+  <!-- ACTION: RETURN -->
+  <div id="tool-return-block" style="display:none;">
+    <div class="grid2">
+      <div class="fg"><label class="req">Date</label><input id="rtool-date" type="date"></div>
+      <div class="fg"><label class="req">Outstanding Movement</label><select id="rtool-ref"><option value="">-- select --</option></select></div>
+      <div class="fg"><label class="req">Condition</label>
+        <select id="rtool-condition">
+          <option>Good</option><option>Damaged</option><option>Needs Repair</option><option>Lost</option>
+        </select>
+      </div>
+      <div class="fg" style="grid-column: 1/-1"><label>Remarks</label><input id="rtool-remarks" type="text"></div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <span class="loading" id="itool-loading">Issuing...</span>
+    <span class="loading" id="rtool-loading">Recording return...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitToolMovement()">Save</button>
+  </div>
+</div>
+
+<!-- ============================================================ Recipe (BOM — merged New + Edit) -->
+<div id="form-recipe" class="form">
+  <h2>Recipe (BOM)</h2>
+  <div class="mode-row">
+    <span class="mode-label">Mode:</span>
+    <label class="inline-toggle"><input type="radio" name="bom-mode" value="new" checked onchange="onBomModeChange()"> <b>New Recipe</b> — create for an FG/SFG that doesn't have one</label>
+    <label class="inline-toggle"><input type="radio" name="bom-mode" value="edit" onchange="onBomModeChange()"> <b>Edit Existing</b> — modify or delete</label>
+  </div>
+
+  <!-- MODE: NEW -->
+  <div id="bom-new-block">
+    <div class="grid3">
+      <div class="fg"><label class="req">Makes Type</label>
+        <select id="abom-ptype" onchange="onBomParentTypeChange()">
+          <option value="FG">FG (Finished Good)</option>
+          <option value="SFG">SFG (Semi-Finished)</option>
+        </select>
+      </div>
+      <div class="fg" style="grid-column: 2/4"><label class="req">Makes</label>
+        <select id="abom-parent"><option value="">-- select --</option></select>
+      </div>
+    </div>
+    <h3>Needs</h3>
+    <table class="lines" id="abom-lines">
+      <thead><tr>
+        <th style="width:10%">Needs Type *</th>
+        <th style="width:35%">Needs *</th>
+        <th style="width:10%">Qty *</th>
+        <th>Notes</th>
+        <th style="width:60px"></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <button class="btn-add-row btn-small" onclick="addBomLine()">+ Add Row</button>
+  </div>
+
+  <!-- MODE: EDIT -->
+  <div id="bom-edit-block" style="display:none;">
+    <div class="grid2">
+      <div class="fg" style="grid-column: 1/-1"><label class="req">Pick a recipe to edit</label>
+        <select id="ebom-picker" onchange="onEditBomPickerChange()"><option value="">-- select a recipe --</option></select>
+      </div>
+    </div>
+    <h3 id="ebom-heading" style="display:none;">Needs (edit qty, add/remove lines)</h3>
+    <table class="lines" id="ebom-lines" style="display:none;">
+      <thead><tr>
+        <th style="width:10%">Needs Type *</th>
+        <th style="width:35%">Needs *</th>
+        <th style="width:10%">Qty *</th>
+        <th>Notes</th>
+        <th style="width:60px"></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <button id="ebom-add-row-btn" class="btn-add-row btn-small" onclick="addEditBomLine()" style="display:none;">+ Add Row</button>
+    <p class="hint" id="ebom-hint" style="display:none;">Save replaces all rows for this parent. Delete removes the entire BOM.</p>
+  </div>
+
+  <div class="btn-row">
+    <span class="loading" id="abom-loading">Saving BOM...</span>
+    <span class="loading" id="ebom-loading">Saving...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button id="bom-delete-btn" class="btn-danger" onclick="submitDeleteBom()" style="display:none;">Delete BOM</button>
+    <button class="btn-primary" onclick="submitRecipe()">Save BOM</button>
+  </div>
+</div>
+
+<!-- ============================================================ Kit Builder -->
+<div id="form-kit-builder" class="form">
+  <h2>Kit Builder — create a Requisition for one FG × N units</h2>
+  <div class="grid2">
+    <div class="fg"><label class="req">Date</label><input id="akit-date" type="date"></div>
+    <div class="fg"><label class="req">FG</label><select id="akit-fg"><option value="">-- select --</option></select></div>
+    <div class="fg"><label class="req">Order Qty</label><input id="akit-qty" type="number" min="1" value="1"></div>
+  </div>
+  <p class="hint">Explodes 2-level BOM and creates ONE Material Requisition covering every RM component needed.</p>
+  <div class="btn-row">
+    <span class="loading" id="akit-loading">Building requisition...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitKitBuilder()">Build Kit &amp; Create Requisition</button>
+  </div>
+</div>
+
+<!-- ============================================================ Edit forms (generic pattern) -->
+
+
+<!-- ============================================================ Bulk Edit -->
+<div id="form-bulk-edit" class="form">
+  <h2>Bulk Edit</h2>
+  <div class="grid3">
+    <div class="fg"><label class="req">Master</label>
+      <select id="bulk-sheet" onchange="bulkLoadRecords()">
+        <option value="">-- select --</option>
+        <option>Item Master</option>
+        <option>SFG Master</option>
+        <option>FG Master</option>
+        <option>Tool Master</option>
+        <option>Supplier Master</option>
+        <option>Job Worker Master</option>
+      </select>
+    </div>
+    <div class="fg"><label>Filter</label><input id="bulk-filter" type="text" placeholder="Type to filter..." oninput="bulkRenderList()"></div>
+    <div class="fg"><label>&nbsp;</label>
+      <button class="btn-small" onclick="bulkSelectAll(true)">Select all filtered</button>
+      <button class="btn-small" onclick="bulkSelectAll(false)">Clear</button>
+    </div>
+  </div>
+  <div id="bulk-records" style="max-height:280px;overflow:auto;border:1px solid #DDD;padding:6px;margin-top:8px;font-size:12px;"></div>
+  <div class="grid3" style="margin-top:10px;">
+    <div class="fg"><label class="req">Field to update</label>
+      <select id="bulk-field"><option value="">-- pick master first --</option></select>
+    </div>
+    <div class="fg" style="grid-column: 2 / -1"><label>New value</label>
+      <input id="bulk-value" type="text" placeholder="Value to write into selected rows">
+    </div>
+  </div>
+  <p class="hint" id="bulk-count">Select a master to load records.</p>
+  <div class="btn-row">
+    <span class="loading" id="bulk-loading">Applying update...</span>
+    <button class="btn-secondary" onclick="closeForm()">Cancel</button>
+    <button class="btn-primary" onclick="submitBulkEdit()">Apply to selected</button>
+  </div>
+</div>
+
+<script>
+// ==========================================================================
+// Form skeleton — Phase 0 wires openers + validation UX. Submit handlers
+// call server-side stubs that are implemented in Phase 1 (masters) and
+// Phase 2 (registers + PDFs). Server returns { success, message } shape.
+// ==========================================================================
+
+const ACTIVE_FORM = '<?= formId ?>';
+const TODAY = new Date().toISOString().slice(0, 10);
+
+// Global error catcher — anything that throws before/during loadFormData
+// gets surfaced in the status bar so the user can see what's wrong.
+window.addEventListener('error', function(ev) {
+  try { showStatus('JS ERROR: ' + ev.message + ' | ' + (ev.filename || '') + ':' + ev.lineno, true); } catch(e) {}
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+  const el = document.getElementById(ACTIVE_FORM);
+  if (!el) { showStatus('Unknown form: ' + ACTIVE_FORM, true); return; }
+  el.classList.add('active');
+  // Auto-fill today's date on every form's date field (includes newer forms too)
+  ['ain-date','areq-date','ajwo-date','ajwi-date','badj-date','apo-date',
+   'ares-date','itool-date','rtool-date','akit-date','arfq-date','afgd-date','asr-date'].forEach(function(id) {
+    const d = document.getElementById(id); if (d) d.value = TODAY;
+  });
+  loadFormData(ACTIVE_FORM);
+  // Focus the first empty required input so user can start typing immediately.
+  setTimeout(function() {
+    const first = el.querySelector('label.req + input:not([readonly]):not([disabled]), label.req + select:not([disabled]), label.req + textarea, input[required]:not([readonly]):not([disabled])');
+    if (first && !first.value) { try { first.focus(); } catch (e) {} }
+  }, 100);
+  // Keyboard shortcuts: Esc closes, Ctrl/Cmd+Enter triggers the primary Save button.
+  document.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Escape') { ev.preventDefault(); closeForm(); return; }
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
+      const btn = el.querySelector('.btn-row .btn-primary');
+      if (btn) { ev.preventDefault(); btn.click(); }
+    }
+  });
+});
+
+// -------- form UX helpers --------
+function closeForm() { google.script.host.close(); }
+
+function showStatus(msg, isErr) {
+  const bar = document.getElementById('status-bar');
+  bar.className = 'status ' + (isErr ? 'err' : 'ok');
+  bar.textContent = msg;
+  if (!isErr) setTimeout(function(){ bar.className = 'status'; }, 4000);
+}
+
+function setLoading(id, on) {
+  const el = document.getElementById(id);
+  if (el) el.className = 'loading' + (on ? ' on' : '');
+}
+
+// -------- server data load --------
+function loadFormData(formId) {
+  google.script.run
+    .withSuccessHandler(function(data) {
+      try {
+        populateDropdowns(formId, data);
+        addLineIfEmpty(formId);
+      } catch (e) {
+        showStatus('CLIENT ERROR in populateDropdowns: ' + e.message + ' | at: ' + (e.stack || '').split('\n')[1], true);
+        console.error('populateDropdowns failed', e);
+      }
+    })
+    .withFailureHandler(function(err) { showStatus('Failed to load form data: ' + err.message, true); })
+    .getFormBootstrap(formId);
+}
+
+function populateDropdowns(formId, data) {
+  if (!data) { showStatus('No data received from server', true); return; }
+  if (data._bootstrapError) { showStatus('Server bootstrap error: ' + data._bootstrapError, true); }
+  const map = {
+    // ponytail: merged master forms load BOTH New-side and Edit-side dropdowns
+    // at once, so Edit mode is instant on toggle (picker is already populated).
+    'form-master-item':    [['ai-category', data.categories], ['ai-uom', data.uoms], ['ai-mattype', data.materialTypes],
+                            ['eitem-picker', data.items], ['eitem-uom', data.uoms], ['eitem-category', data.categories], ['eitem-mattype', data.materialTypes]],
+    'form-master-sfg':     [['as-uom', data.uoms],
+                            ['esfg-picker', data.sfgs], ['esfg-uom', data.uoms]],
+    'form-master-fg':      [['afg-uom', data.uoms],
+                            ['efg-picker', data.fgs], ['efg-uom', data.uoms]],
+    'form-master-supplier':   [['esup-picker', data.suppliers]],
+    'form-master-jobworker':  [['ajw-process', data.processTypes],
+                            ['ejw-picker', data.jobWorkers], ['ejw-process', data.processTypes]],
+    'form-add-inward':     [['ain-supplier', data.suppliers], ['ain-poref', data.activePos]],
+    'form-add-requisition':[['areq-approver', data.employees]],
+    'form-add-jw-out':     [['ajwo-jw', data.jobWorkers]],
+    'form-add-jw-in':      [['ajwi-ref', data.openJwc]],
+    'form-adjustment': [],  // Rows populated dynamically via addBadjRow()
+    'form-add-qc-record':       [],  // Populated dynamically via onQcSourceChange()
+    'form-reservation':         [['ares-code', (data.items || []).concat(data.sfgs || []).concat(data.fgs || [])]],
+    'form-add-po':         [['apo-supplier', data.suppliers]],
+    'form-amend-po':       [['amp-po', data.amendablePos]],
+    'form-add-rfq':        [],  // Items via addLine() line templates
+    'form-add-fg-delivery': [],  // per-row dropdowns populated via addFgdMainLine / addFgdHwLine
+    'form-site-return':     [['asr-dc', data.recentDcs]],
+    'form-add-tool':       [],
+    'form-tool-movement':  [['itool-tool', data.toolsInStore], ['rtool-ref', data.toolsOutstanding]],
+    'form-recipe':         [['abom-parent', data.fgs]],  // 'New' side default parentType=FG; 'Edit' picker fills on mode switch
+    'form-kit-builder':    [['akit-fg', data.fgs]],
+  };
+  (map[formId] || []).forEach(function(pair) {
+    const sel = document.getElementById(pair[0]);
+    if (!sel || !pair[1]) return;
+    pair[1].forEach(function(v) {
+      const opt = document.createElement('option');
+      if (typeof v === 'string') { opt.value = v; opt.textContent = v; }
+      else {
+        // Composite value: user sees + selects the full searchable label.
+        // Server extracts code from the composite on submit.
+        const label = v.label || (v.code + (v.desc ? ' — ' + v.desc : ''));
+        opt.value = label;
+        opt.textContent = label;
+        opt.dataset.code = v.code;
+        if (v.desc) opt.dataset.desc = v.desc;
+        if (v.uom)  opt.dataset.uom  = v.uom;
+      }
+      sel.appendChild(opt);
+    });
+  });
+  // project + employee datalists
+  function _fillDatalist(id, values) {
+    const dl = document.getElementById(id);
+    if (!dl || !values) return;
+    dl.innerHTML = '';
+    values.forEach(function(v) { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
+  }
+  _fillDatalist('project-list',  data.projects);
+  _fillDatalist('employee-list', data.employees);
+  // supplier datalist for multi-supplier input (use label so user sees name)
+  const supDl = document.getElementById('supplier-list');
+  if (supDl && data.suppliers) {
+    supDl.innerHTML = '';
+    data.suppliers.forEach(function(s) {
+      const o = document.createElement('option');
+      o.value = s.label || s.code;
+      supDl.appendChild(o);
+    });
+  }
+  // stash lookup dictionaries for line-item auto-fill
+  window._IMS = data;
+}
+
+// -------- multi-line row management --------
+const LINE_TEMPLATES = {
+  'ain':  '<td><select onchange="onItemLookup(this,\'ain\')"><option value="">--</option></select></td><td class="desc"></td><td style="display:flex;gap:3px;padding:4px;"><input type="number" class="lw-l" min="0" step="0.5" oninput="onLwInput(this)" placeholder="L" title="Length (ft)" style="width:50%;min-width:0;"><input type="number" class="lw-w" min="0" step="0.5" oninput="onLwInput(this)" placeholder="W" title="Width (ft)" style="width:50%;min-width:0;"></td><td><input type="number" min="0" step="0.01" oninput="onPcsQtyInput(this,\'pcs\')" title="Pieces"></td><td><input type="number" min="0" step="0.0001" oninput="onPcsQtyInput(this,\'qty\')"></td><td><input type="number" min="0" step="0.01"></td><td style="display:flex;gap:4px;"><select class="disc-mode" style="width:58px;flex-shrink:0;" title="% of line / flat Rs"><option value="pct">%</option><option value="amt">Rs</option></select><input type="number" min="0" step="0.01" value="0" style="flex:1;min-width:0;"></td><td><input type="number" min="0" max="100" value="18"></td><td><input type="text"></td><td><button class="btn-danger btn-small" onclick="removeLine(this)">×</button></td>',
+  'areq': '<td><select onchange="onItemLookup(this,\'areq\')"><option value="">--</option></select></td><td class="desc"></td><td><input type="number" min="0" step="0.01"></td><td><input type="text"></td><td><button class="btn-danger btn-small" onclick="removeLine(this)">×</button></td>',
+  'ajwo': '<td><select onchange="onSfgLookup(this,\'ajwo\')"><option value="">--</option></select></td><td class="desc"></td><td><input type="number" min="0" step="0.01"></td><td><input type="number" min="0" step="0.01" placeholder="kg"></td><td><input type="date"></td><td><input type="text"></td><td><button class="btn-danger btn-small" onclick="removeLine(this)">×</button></td>',
+  'apo':  '<td><select onchange="onItemLookup(this,\'apo\')"><option value="">--</option></select></td><td class="desc"></td><td><input type="number" min="0" step="0.0001" oninput="onSqmUnitInput(this)" placeholder="e.g. 4.4652"></td><td><input type="number" min="0" step="0.01" oninput="onPcsQtyInput(this,\'pcs\')" title="Pieces"></td><td><input type="number" min="0" step="0.0001" oninput="onPcsQtyInput(this,\'qty\')"></td><td><input type="number" min="0" step="0.01"></td><td style="display:flex;gap:4px;"><select class="disc-mode" style="width:58px;flex-shrink:0;" title="% of line / flat Rs"><option value="pct">%</option><option value="amt">Rs</option></select><input type="number" min="0" step="0.01" value="0" style="flex:1;min-width:0;"></td><td><input type="number" min="0" max="100" value="18"></td><td><input type="text"></td><td><button class="btn-danger btn-small" onclick="removeLine(this)">×</button></td>',
+  'arfq': '<td><select onchange="onItemLookup(this,\'arfq\')"><option value="">--</option></select></td><td class="desc"></td><td><input type="text" placeholder="from master"></td><td><input type="text" placeholder="from master"></td><td><input type="number" min="0" step="0.01"></td><td><input type="text"></td><td><button class="btn-danger btn-small" onclick="removeLine(this)">×</button></td>',
+};
+
+function addLine(prefix) {
+  const tbody = document.querySelector('#' + prefix + '-lines tbody');
+  if (!tbody) return;
+  const tr = document.createElement('tr');
+  tr.innerHTML = LINE_TEMPLATES[prefix];
+  tbody.appendChild(tr);
+  // Populate item/sfg dropdown for this row (composite label as value)
+  const sel = tr.querySelector('select');
+  if (sel && window._IMS) {
+    const source = (prefix === 'ajwo') ? (window._IMS.items || []).concat(window._IMS.sfgs || [])
+                 : (prefix === 'arfq') ? (window._IMS.items || []).concat(window._IMS.sfgs || []).concat(window._IMS.fgs || [])
+                 : window._IMS.items;
+    (source || []).forEach(function(v) {
+      const opt = document.createElement('option');
+      const label = v.label || (v.code + ' — ' + v.desc);
+      opt.value = label;
+      opt.textContent = label;
+      opt.dataset.code = v.code;
+      opt.dataset.desc = v.desc;
+      opt.dataset.uom  = v.uom || '';
+      sel.appendChild(opt);
+    });
+  }
+  // Refresh the totals bar if this form has one (ain / apo).
+  if (typeof recalcTotals === 'function') recalcTotals(prefix);
+}
+
+// PO form: show/hide the Verify Party block + pre-fill Bill To from Config.
+function toggleApoPartyBlock() {
+  const box = document.getElementById('apo-verify-party');
+  const block = document.getElementById('apo-party-block');
+  const on = box.checked;
+  block.style.display = on ? 'block' : 'none';
+  if (on) {
+    // Fill Bill To from company info in bootstrap (once)
+    const c = (window._IMS && window._IMS.company) || {};
+    if (!document.getElementById('apo-bill-name').value)    document.getElementById('apo-bill-name').value = c.name || '';
+    if (!document.getElementById('apo-bill-gstin').value)   document.getElementById('apo-bill-gstin').value = c.gstin || '';
+    if (!document.getElementById('apo-bill-address').value) document.getElementById('apo-bill-address').value = c.address || '';
+    if (!document.getElementById('apo-bill-contact').value) document.getElementById('apo-bill-contact').value = [c.phone, c.email].filter(String).join(' | ');
+    // Fill supplier fields if a supplier is already picked
+    onApoSupplierChange();
+  }
+}
+
+// On PO supplier select, fetch full details from server and pre-fill the
+// verify-party fields (does nothing if the block isn't showing).
+function onApoSupplierChange() {
+  const supCode = extractCode(document.getElementById('apo-supplier').value);
+  if (!supCode) return;
+  if (document.getElementById('apo-party-block').style.display === 'none') return;
+  google.script.run
+    .withSuccessHandler(function(s) {
+      if (!s || !s.success) return;
+      document.getElementById('apo-sup-name').value    = s.name    || '';
+      document.getElementById('apo-sup-gstin').value   = s.gstin   || '';
+      document.getElementById('apo-sup-address').value = s.address || '';
+      document.getElementById('apo-sup-contact').value = [s.contact, s.mobile, s.email].filter(String).join(' | ');
+    })
+    .withFailureHandler(function() {})
+    .getSupplierDetails(supCode);
+}
+
+// Toggle the doc-level "board mode" — shows/hides Sqm/Unit + PCS columns.
+// When turned ON, re-run onItemLookup on existing rows so Sqm/Unit auto-fills
+// from Item Master for any board items already picked.
+function toggleBoardMode(prefix, on) {
+  const table = document.getElementById(prefix + '-lines');
+  if (!table) return;
+  table.classList.toggle('board-mode', on);
+  if (on) {
+    table.querySelectorAll('tbody tr').forEach(function(r) {
+      const sel = r.querySelector('select');
+      if (sel && sel.selectedIndex > 0) onItemLookup(sel, prefix);
+    });
+  }
+}
+
+// PCS ⇄ Qty (SQM) two-way sync for board items. Only fires if row has a
+// data-sqm attribute (set by onItemLookup when the selected item has Sqm/Unit).
+// source = 'pcs' or 'qty' — the field the user just typed in.
+function onPcsQtyInput(inputEl, source) {
+  const row = inputEl.closest('tr');
+  if (!row) return;
+  const sqm = Number(row.dataset.sqm || 0);
+  if (!sqm) return;  // no Sqm/Unit set — user enters PCS and Qty independently
+  const cells = row.children;
+  const pcsInput = cells[3].querySelector('input');
+  const qtyInput = cells[4].querySelector('input');
+  if (source === 'pcs') {
+    const pcs = Number(pcsInput.value) || 0;
+    qtyInput.value = pcs ? (pcs * sqm).toFixed(4) : '';
+  } else {
+    const qty = Number(qtyInput.value) || 0;
+    pcsInput.value = qty ? (qty / sqm).toFixed(2) : '';
+  }
+}
+
+function addLineIfEmpty(formId) {
+  const prefix = { 'form-add-inward':'ain','form-add-requisition':'areq','form-add-jw-out':'ajwo','form-add-po':'apo','form-add-rfq':'arfq' }[formId];
+  if (formId === 'form-add-fg-delivery' && document.querySelector('#afgd-main-lines tbody').children.length === 0) addFgdMainLine();
+  if (formId === 'form-recipe') onBomModeChange();  // defaults to New; lazy-loads edit picker if user switches
+  if (formId === 'form-reservation') {
+    _wireReservationCodeChange();           // wires the "New" mode uom auto-fill
+    onReservationModeChange();              // defaults to New mode; lazy-load if user switches
+  }
+  if (formId === 'form-adjustment') {
+    const tb = document.querySelector('#badj-lines tbody');
+    if (tb.children.length === 0) addBadjRow();
+    // Force re-populate every row now that window._IMS is guaranteed set.
+    tb.querySelectorAll('tr').forEach(function(r) {
+      const sel = r.children[1].querySelector('select');  // Col 1 now (col 0 = ± checkbox)
+      if (sel) populateBadjCodeSelect(sel);
+    });
+  }
+  // Race fix: if the user clicked "+ Add Row" before the server bootstrap
+  // arrived, existing rows have empty dropdowns. Re-populate them now that
+  // window._IMS is guaranteed set. Idempotent for correctly-populated rows.
+  if (prefix) {
+    const existing = document.querySelectorAll('#' + prefix + '-lines tbody tr');
+    if (existing.length > 0) {
+      existing.forEach(function(r) { _repopulateLineSelect(r, prefix); });
+    } else {
+      addLine(prefix);
+    }
+  }
+}
+
+// Re-fill a single line row's <select> from window._IMS. Preserves current
+// selection if the previously-chosen option is still in the source.
+// ponytail: ajwo includes items+sfgs (not just sfgs) — matches addLine's source
+// (Change 2 earlier: RM can be sent for Job Work alongside SFG). Keeping these
+// in sync is critical — a mismatch here is exactly the "dropdown empty in row 1"
+// class of bug.
+function _repopulateLineSelect(tr, prefix) {
+  if (!window._IMS) return;
+  const sel = tr.querySelector('select');
+  if (!sel) return;
+  const source = (prefix === 'ajwo') ? (window._IMS.items || []).concat(window._IMS.sfgs || [])
+               : (prefix === 'arfq') ? (window._IMS.items || []).concat(window._IMS.sfgs || []).concat(window._IMS.fgs || [])
+               : window._IMS.items;
+  if (!source || !source.length) return;
+  // Skip if already populated (has more than just the placeholder)
+  if (sel.options.length > 1) return;
+  const priorValue = sel.value;
+  source.forEach(function(v) {
+    const opt = document.createElement('option');
+    const label = v.label || (v.code + ' — ' + v.desc);
+    opt.value = label;
+    opt.textContent = label;
+    opt.dataset.code = v.code;
+    opt.dataset.desc = v.desc;
+    opt.dataset.uom  = v.uom || '';
+    sel.appendChild(opt);
+  });
+  if (priorValue) sel.value = priorValue;
+}
+
+function removeLine(btn) {
+  const row = btn.closest('tr');
+  if (row.parentNode.children.length > 1) row.remove();
+  else { showStatus('At least one line item required', true); return; }
+  // ponytail: re-sum after a row goes away so the totals bar doesn't lie.
+  const tableId = (btn.closest('table') || {}).id || '';
+  const prefix = tableId.replace('-lines', '');
+  if (prefix) recalcTotals(prefix);
+}
+
+// Live totals bar under the lines table — Inward (ain) & PO (apo) only.
+// Reads qty/rate/disc/gst from each row, mirrors backend math exactly, writes
+// Taxable / Discount / GST / Grand Total into #<prefix>-totals.
+function recalcTotals(prefix) {
+  const bar = document.getElementById(prefix + '-totals');
+  if (!bar) return;  // no totals bar for this form — nothing to do
+  // Column layout differs: ain/apo have sqm/pcs cols so qty is at idx 4; amp
+  // has no sqm/pcs so qty is at idx 2. Shift accordingly.
+  const isCompact = (prefix === 'amp');
+  const qtyIdx  = isCompact ? 2 : 4;
+  const rateIdx = isCompact ? 3 : 5;
+  const discIdx = isCompact ? 4 : 6;
+  const gstIdx  = isCompact ? 5 : 7;
+  const rows = document.querySelectorAll('#' + prefix + '-lines tbody tr');
+  let taxableSum = 0, discSum = 0, gstSum = 0, totalSum = 0, lineCount = 0;
+  rows.forEach(function(r) {
+    const c = r.children;
+    const qty  = parseFloat((c[qtyIdx].querySelector('input')  || {}).value) || 0;
+    const rate = parseFloat((c[rateIdx].querySelector('input') || {}).value) || 0;
+    if (!(qty > 0) || !(rate >= 0)) return;
+    lineCount++;
+    const discModeEl = c[discIdx].querySelector('select.disc-mode');
+    const discMode = discModeEl ? discModeEl.value : 'pct';
+    const discVal = parseFloat((c[discIdx].querySelector('input') || {}).value) || 0;
+    const gstPct  = parseFloat((c[gstIdx].querySelector('input')  || {}).value) || 0;
+    const gross = qty * rate;
+    const discAmt = discMode === 'amt' ? discVal : gross * discVal / 100;
+    const taxable = gross - discAmt;
+    const gstAmt = taxable * gstPct / 100;
+    taxableSum += taxable;
+    discSum    += discAmt;
+    gstSum     += gstAmt;
+    totalSum   += taxable + gstAmt;
+  });
+  if (!lineCount) { bar.textContent = 'Enter line items to see totals…'; return; }
+  function f(n) { return n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  bar.innerHTML =
+    '<span style="margin-right:16px;">Taxable: <b>₹' + f(taxableSum) + '</b></span>' +
+    '<span style="margin-right:16px;color:var(--danger);">Discount: <b>−₹' + f(discSum) + '</b></span>' +
+    '<span style="margin-right:16px;">GST: <b>₹' + f(gstSum) + '</b></span>' +
+    '<span style="font-size:14px;">Grand Total: <b style="color:var(--primary);">₹' + f(totalSum) + '</b></span>';
+}
+
+// Hide options in every row's item-code <select> that don't match the filter.
+// Empty query → show all. Case-insensitive substring match on option text.
+// Uses .hidden property (Chrome supports on option elements in dialogs).
+function filterLineItemSelects(prefix, query) {
+  const q = String(query || '').trim().toLowerCase();
+  const rows = document.querySelectorAll('#' + prefix + '-lines tbody tr');
+  rows.forEach(function(r) {
+    const sel = r.querySelector('select');
+    if (!sel) return;
+    for (let i = 0; i < sel.options.length; i++) {
+      const opt = sel.options[i];
+      if (!opt.value) { opt.hidden = false; continue; }  // keep placeholder
+      opt.hidden = q ? (opt.textContent.toLowerCase().indexOf(q) < 0) : false;
+    }
+  });
+}
+
+function onItemLookup(sel, prefix) {
+  const row = sel.closest('tr');
+  const opt = sel.options[sel.selectedIndex];
+  row.querySelector('.desc').textContent = opt ? (opt.dataset.desc || '') : '';
+  // GRN: user types L × W (ft) per row; sqm/unit auto-computes via trade-size
+  // lookup. PO: user types Sqm/Unit directly (single input). In both cases we
+  // just recompute PCS/Qty state based on whatever's already typed — don't
+  // clobber user input.
+  if (prefix === 'ain') {
+    const lEl = row.querySelector('.lw-l');
+    if (lEl) onLwInput(lEl);
+  } else if (prefix === 'apo') {
+    const sqmInput = row.children[2].querySelector('input');
+    if (sqmInput) onSqmUnitInput(sqmInput);
+  }
+}
+
+// User changed Sqm/Unit for this row (PO form). Updates row dataset + tooltip.
+function onSqmUnitInput(inputEl) {
+  const row = inputEl.closest('tr');
+  const sqm = Number(inputEl.value) || 0;
+  const pcsInput = row.children[3].querySelector('input');
+  const qtyInput = row.children[4].querySelector('input');
+  if (sqm > 0) {
+    row.dataset.sqm = sqm;
+    qtyInput.title = 'SQM = PCS × ' + sqm;
+    if (Number(pcsInput.value) > 0) qtyInput.value = (Number(pcsInput.value) * sqm).toFixed(4);
+  } else {
+    delete row.dataset.sqm;
+    qtyInput.title = '';
+  }
+}
+
+// Standard board trade-size → actual mm (nominal feet → the real metric size
+// used on bills: 8ft board is cut at 2440mm, 6ft at 1830mm, etc.). Non-standard
+// feet values fall back to literal ft→m conversion (× 304.8 mm).
+const _TRADE_FT_MM = {4:1220, 6:1830, 7:2135, 8:2440, 10:3050, 12:3660};
+function _ftToMm(ft) {
+  if (_TRADE_FT_MM[ft] !== undefined) return _TRADE_FT_MM[ft];
+  return ft * 304.8;
+}
+
+// GRN form: user typed L (ft) or W (ft) for this board row. Compute Sqm/Unit
+// via the trade-size lookup, stash it on the row dataset, and auto-fill Qty
+// from PCS if PCS already has a value. Same downstream contract as
+// onSqmUnitInput — row.dataset.sqm is the single source of truth for the
+// board multiplier used by onPcsQtyInput and submitInward.
+function onLwInput(inputEl) {
+  const row = inputEl.closest('tr');
+  const L = Number(row.querySelector('.lw-l').value) || 0;
+  const W = Number(row.querySelector('.lw-w').value) || 0;
+  const pcsInput = row.children[3].querySelector('input');
+  const qtyInput = row.children[4].querySelector('input');
+  if (L > 0 && W > 0) {
+    const sqm = (_ftToMm(L) * _ftToMm(W)) / 1000000;
+    row.dataset.sqm = sqm;
+    qtyInput.title = 'SQM = PCS × ' + sqm.toFixed(4) + '  (L=' + L + 'ft × W=' + W + 'ft)';
+    if (Number(pcsInput.value) > 0) qtyInput.value = (Number(pcsInput.value) * sqm).toFixed(4);
+  } else {
+    delete row.dataset.sqm;
+    qtyInput.title = '';
+  }
+}
+
+function onSfgLookup(sel, prefix) { onItemLookup(sel, prefix); }
+
+// -------- Site Return: on DC pick, load its lines into the table --------
+function onSiteReturnDcSelect() {
+  const dcRaw = document.getElementById('asr-dc').value;
+  const dcNo = extractCode(dcRaw);
+  const tbody = document.querySelector('#asr-lines tbody');
+  const empty = document.getElementById('asr-empty');
+  const caption = document.getElementById('asr-lines-caption');
+  tbody.innerHTML = '';
+  caption.textContent = '';
+  if (!dcNo) { empty.style.display = 'block'; empty.textContent = 'Pick a Delivery Challan above to load its lines.'; return; }
+  empty.style.display = 'block';
+  empty.textContent = 'Loading DC lines…';
+  setLoading('asr-loading', true);
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading('asr-loading', false);
+      if (!res || !res.success) {
+        empty.textContent = 'Could not load DC: ' + ((res && res.message) || 'unknown error');
+        return;
+      }
+      if (!res.lines || !res.lines.length) {
+        empty.textContent = 'DC ' + dcNo + ' has no lines.';
+        return;
+      }
+      caption.textContent = '(DC ' + dcNo + ' — ' + res.lines.length + ' line(s))';
+      res.lines.forEach(function(l) {
+        const tr = document.createElement('tr');
+        tr.dataset.lineNo = l.lineNo;
+        const canReturn = l.stillOut > 0;
+        tr.innerHTML =
+          '<td>'+_h(l.lineNo)+'</td>' +
+          '<td>'+_h(l.section)+'</td>' +
+          '<td>'+_h(l.code)+'</td>' +
+          '<td>'+_h(l.desc)+'</td>' +
+          '<td style="text-align:right;">'+_fmtNum(l.qty)+'</td>' +
+          '<td style="text-align:right;">'+_fmtNum(l.returned)+'</td>' +
+          '<td style="text-align:right;font-weight:bold;'+(canReturn?'':'color:var(--text-muted);')+'">'+_fmtNum(l.stillOut)+'</td>' +
+          '<td><input type="number" min="0" step="0.0001" max="'+l.stillOut+'" value="0" '+(canReturn?'':'disabled title="Nothing left to return"')+'></td>' +
+          '<td>'+_h(l.uom)+'</td>';
+        tbody.appendChild(tr);
+      });
+      empty.style.display = 'none';
+    })
+    .withFailureHandler(function(err) {
+      setLoading('asr-loading', false);
+      empty.textContent = 'Server error: ' + err.message;
+    })
+    .getDcLinesForReturn(dcNo);
+}
+
+function _h(v) { if (v === null || v === undefined) return ''; return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _fmtNum(n) { const x = Number(n) || 0; return x.toFixed(x % 1 === 0 ? 0 : 2); }
+
+function submitSiteReturn() {
+  const date = requireField('asr-date', 'Return Date'); if (!date) return;
+  const dcRaw = requireField('asr-dc', 'Delivery Challan'); if (!dcRaw) return;
+  const dcNo = extractCode(dcRaw);
+  const rows = document.querySelectorAll('#asr-lines tbody tr');
+  if (!rows.length) { showStatus('No lines loaded — pick a DC first', true); return; }
+  const lineReturns = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const input = r.children[7].querySelector('input');
+    const qty = parseFloat(input ? input.value : '') || 0;
+    if (qty <= 0) continue;
+    const stillOut = parseFloat(r.children[6].textContent) || 0;
+    if (qty > stillOut + 0.0001) {
+      showStatus('Line ' + r.dataset.lineNo + ': return qty ' + qty + ' > still out ' + stillOut, true);
+      return;
+    }
+    lineReturns.push({ lineNo: r.dataset.lineNo, returnedQty: qty });
+  }
+  if (!lineReturns.length) { showStatus('Enter Return Now > 0 on at least one line', true); return; }
+  callServer('addSiteReturn', { date: date, dcNo: dcNo, lineReturns: lineReturns }, 'asr-loading');
+}
+
+// -------- Job Work Inward: on reference challan pick, auto-populate lines --------
+function onJwiRefSelect() {
+  const refRaw = document.getElementById('ajwi-ref').value;
+  const ref = extractCode(refRaw);
+  const tbody = document.querySelector('#ajwi-lines tbody');
+  tbody.innerHTML = '';
+  if (!ref) return;
+  setLoading('ajwi-loading', true);
+  google.script.run
+    .withSuccessHandler(function(lines) {
+      setLoading('ajwi-loading', false);
+      if (!lines || !lines.length) { showStatus('No open lines found for ' + ref, true); return; }
+      lines.forEach(function(l) {
+        const tr = document.createElement('tr');
+        tr.dataset.sfg = l.sfgCode;
+        tr.innerHTML =
+          '<td>'+l.sfgCode+'</td>' +
+          '<td>'+l.desc+'</td>' +
+          '<td>'+l.qtySent+'</td>' +
+          '<td><input type="number" min="0" step="0.01" value="'+l.qtySent+'"></td>' +
+          '<td><input type="number" min="0" step="0.01" value="0"></td>' +
+          '<td><input type="number" min="0" step="0.01" value="0"></td>' +
+          '<td><input type="text"></td>';
+        tbody.appendChild(tr);
+      });
+    })
+    .withFailureHandler(function(err) { setLoading('ajwi-loading', false); showStatus('Failed: '+err.message, true); })
+    .getOpenJwcLines(ref);
+}
+
+// -------- Submit handlers --------
+function collectLines(prefix, mapper) {
+  const rows = document.querySelectorAll('#' + prefix + '-lines tbody tr');
+  const out = [];
+  rows.forEach(function(r) { const v = mapper(r); if (v) out.push(v); });
+  return out;
+}
+
+function requireField(id, label) {
+  const el = document.getElementById(id);
+  if (!el || !el.value) { showStatus(label + ' is required', true); return null; }
+  return el.value;
+}
+
+function callServer(fnName, data, loadingId) {
+  setLoading(loadingId, true);
+  // Disable ALL buttons in the active form's footer so a slow save can't be
+  // triggered twice. Re-enabled in every branch below.
+  const activeForm = document.querySelector('.form.active');
+  const btns = activeForm ? activeForm.querySelectorAll('.btn-row button') : [];
+  btns.forEach(function(b) { b.disabled = true; });
+  const _reEnable = function() { btns.forEach(function(b) { b.disabled = false; }); };
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading(loadingId, false);
+      _reEnable();
+      if (res && res.success) {
+        showStatus(res.message || 'Saved', false);
+        // Auto-download PDF if one was generated. Opens in a new tab; browser
+        // then downloads because Drive returns Content-Disposition: attachment.
+        if (res.pdfDownloadUrl) window.open(res.pdfDownloadUrl, '_blank');
+        setTimeout(closeForm, 1500);
+      } else if (res && res.needsConfirm) {
+        // Overselling warning — build a readable message with description + type
+        const anyNegative = (res.warnings || []).some(function(w) { return w.available < 0; });
+        const msg = (res.message || 'Some lines exceed available stock. Confirm to proceed?') + '\n\n' +
+          (res.warnings || []).map(function(w) {
+            const label = w.code + (w.desc ? ' — ' + w.desc : '') + ' (' + (w.section || '?') + ')';
+            const line = '• ' + label + '\n' +
+                         '  Requested: ' + w.requested + '   |   System stock: ' + w.available + '   |   Short: ' + w.shortfall;
+            return w.systemNote ? line + '\n  ⚠ ' + w.systemNote : line;
+          }).join('\n\n') +
+          (anyNegative
+            ? '\n\nTIP: If you actually have this stock in the warehouse, cancel here → open Add Adjustment → set type=Opening and enter the real qty. Then retry this requisition.'
+            : '') +
+          '\n\nProceed anyway (system stock will go more negative)?';
+        if (confirm(msg)) {
+          data.bypassStockCheck = true;
+          callServer(fnName, data, loadingId);
+        }
+      } else {
+        showStatus((res && res.message) || 'Save failed', true);
+      }
+    })
+    .withFailureHandler(function(err) { setLoading(loadingId, false); _reEnable(); showStatus('Error: ' + err.message, true); })
+    [fnName](data);
+}
+
+
+// Shared duplicate-detection handler for Add Item/SFG/FG.
+// Called from wrapper that overrides callServer's success path.
+function _tryAddWithDup(fnName, payload, loadingId) {
+  const loading = document.getElementById(loadingId);
+  if (loading) loading.style.display = 'inline';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (loading) loading.style.display = 'none';
+      if (r && r.duplicate) {
+        const msg = 'Possible duplicate found:\n\n' + r.existingCode + ' — ' + r.existingDesc +
+          '\n\nCreate a new record anyway?';
+        if (confirm(msg)) {
+          payload.forceCreate = true;
+          _tryAddWithDup(fnName, payload, loadingId);
+        } else {
+          showStatus('Cancelled — using existing ' + r.existingCode, false);
+        }
+        return;
+      }
+      // Normal path — delegate to the standard callServer post-handler.
+      if (r && r.success) {
+        showStatus(r.message || 'Saved', false);
+        if (r.pdfDownloadUrl) window.open(r.pdfDownloadUrl, '_blank');
+        setTimeout(closeForm, 900);
+      } else {
+        showStatus((r && r.message) || 'Error', true);
+      }
+    })
+    .withFailureHandler(function(e) {
+      if (loading) loading.style.display = 'none';
+      showStatus(e.message, true);
+    })[fnName](payload);
+}
+
+function submitAddItem() {
+  const cat = requireField('ai-category', 'Category'); if (!cat) return;
+  const name = requireField('ai-name', 'Item Name'); if (!name) return;
+  const uom = requireField('ai-uom', 'UOM'); if (!uom) return;
+  const mat = requireField('ai-mattype', 'Material Type'); if (!mat) return;
+  _tryAddWithDup('addItem', {
+    category: cat, itemName: name, size: v('ai-size'), grade: v('ai-grade'),
+    uom: uom, materialType: mat, storage: v('ai-storage'), rack: v('ai-rack'),
+    hsn: v('ai-hsn'), supplier: _extractCodesCsv(v('ai-supplier')),
+    minLvl: n('ai-min'), maxLvl: n('ai-max'), openingQty: n('ai-opening'),
+    // ponytail: Amount ÷ Qty wins if both given, else fall back to the Rate field.
+    // Sqm per Unit field dropped Oct-2026 — now entered per-row on GRN/PO forms.
+    avgRate: (n('ai-amount') > 0 && n('ai-opening') > 0) ? (n('ai-amount') / n('ai-opening')) : n('ai-rate'),
+  }, 'ai-loading');
+}
+
+function submitAddSfg() {
+  const name = requireField('as-name', 'Item Name'); if (!name) return;
+  const uom = requireField('as-uom', 'UOM'); if (!uom) return;
+  _tryAddWithDup('addSfg', {
+    itemName: name, size: v('as-size'), color: v('as-color'), uom: uom,
+    storage: v('as-storage'), minLvl: n('as-min'), maxLvl: n('as-max'),
+    openingQty: n('as-opening'),
+  }, 'as-loading');
+}
+
+function submitAddSupplier() {
+  const name = requireField('asp-name', 'Firm Name'); if (!name) return;
+  callServer('addSupplier', {
+    firmName: name, category: v('asp-cat'), contact: v('asp-contact'),
+    mobile: v('asp-mobile'), email: v('asp-email'), gst: v('asp-gst'), address: v('asp-address'),
+  }, 'asp-loading');
+}
+
+function submitAddJobWorker() {
+  const name = requireField('ajw-name', 'Firm Name'); if (!name) return;
+  const proc = requireField('ajw-process', 'Process Type'); if (!proc) return;
+  callServer('addJobWorker', {
+    firmName: name, processType: proc, contact: v('ajw-contact'),
+    mobile: v('ajw-mobile'), email: v('ajw-email'), gst: v('ajw-gst'), address: v('ajw-address'),
+  }, 'ajw-loading');
+}
+
+// Compute grand total across lines (gross - discount + gst). Used for
+// high-value confirmation gate on GRN + PO.
+function _computeGrandTotal(lines) {
+  return lines.reduce(function(sum, l) {
+    const gross = (Number(l.qty) || 0) * (Number(l.rate) || 0);
+    const discAmt = gross * (Number(l.discount) || 0) / 100;
+    const gstAmt = (gross - discAmt) * (Number(l.gst) || 0) / 100;
+    return sum + gross - discAmt + gstAmt;
+  }, 0);
+}
+
+// Ask user to confirm if total exceeds High Value Threshold. Returns true if
+// safe to proceed (below threshold OR user confirmed).
+function _confirmIfHighValue(lines, docType) {
+  const threshold = (window._IMS && Number(window._IMS.highValueThreshold)) || 100000;
+  const total = _computeGrandTotal(lines);
+  if (total < threshold) return true;
+  const msg = 'HIGH-VALUE ' + docType + ': Rs. ' + total.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') +
+              '\n\n(Threshold: Rs. ' + threshold.toLocaleString() + ')\n\n' +
+              'Please double-check quantities and rates before posting.\n\nClick OK to post, or Cancel to review.';
+  return confirm(msg);
+}
+
+function submitInward() {
+  const date = requireField('ain-date', 'Date'); if (!date) return;
+  const sup = requireField('ain-supplier', 'Supplier'); if (!sup) return;
+  const lines = collectLines('ain', function(r) {
+    const cells = r.children;
+    const code = extractCode(cells[0].querySelector('select').value);
+    // Sqm/Unit comes from row.dataset.sqm, set by onLwInput from the L × W
+    // (ft) inputs via the trade-size lookup. 0 = non-board row (user left L/W empty).
+    const sqmPerUnit = parseFloat(r.dataset.sqm) || 0;
+    const pcs = parseFloat(cells[3].querySelector('input').value) || 0;
+    const qty = parseFloat(cells[4].querySelector('input').value);
+    const rate = parseFloat(cells[5].querySelector('input').value);
+    if (!code || !(qty > 0) || !(rate >= 0)) return null;
+    const discInputs = cells[6].querySelectorAll('input,select');
+    const discMode = cells[6].querySelector('select.disc-mode') ? cells[6].querySelector('select.disc-mode').value : 'pct';
+    const discVal = parseFloat(cells[6].querySelector('input').value) || 0;
+    return {
+      itemCode: code, qty: qty, pcs: pcs, sqmPerUnit: sqmPerUnit, rate: rate,
+      discount: discVal, discountMode: discMode,
+      gst: parseFloat(cells[7].querySelector('input').value) || 0,
+      remarks: cells[8].querySelector('input').value,
+    };
+  });
+  if (!lines.length) { showStatus('Add at least one valid line item', true); return; }
+  if (!_confirmIfHighValue(lines, 'GRN')) return;
+  const skipPdf = document.getElementById('ain-skippdf').checked;
+  callServer('addInwardMultiLine', { skipPdf: skipPdf, date: date, supplierCode: extractCode(sup), invoiceNo: v('ain-invoice'), poRef: extractCode(v('ain-poref')), lineItems: lines }, 'ain-loading');
+}
+
+function submitRequisition() {
+  const date = requireField('areq-date', 'Date'); if (!date) return;
+  const lines = collectLines('areq', function(r) {
+    const c = r.children;
+    const code = extractCode(c[0].querySelector('select').value);
+    const qty = parseFloat(c[2].querySelector('input').value);
+    if (!code || !(qty > 0)) return null;
+    return { itemCode: code, qty: qty, purpose: c[3].querySelector('input').value };
+  });
+  if (!lines.length) { showStatus('Add at least one valid line item', true); return; }
+  const skipPdf = document.getElementById('areq-skippdf').checked;
+  callServer('addRequisitionMultiLine', { skipPdf: skipPdf, date: date, project: v('areq-project'), takenBy: v('areq-approver'), lineItems: lines }, 'areq-loading');
+}
+
+function submitJobWorkOut() {
+  const date = requireField('ajwo-date', 'Date'); if (!date) return;
+  const jw = requireField('ajwo-jw', 'Job Worker'); if (!jw) return;
+  const lines = collectLines('ajwo', function(r) {
+    const c = r.children;
+    // Cols: 0=SFG select, 1=Desc, 2=Qty, 3=Weight, 4=Expected Return, 5=Remarks, 6=Delete
+    const code = extractCode(c[0].querySelector('select').value);
+    const qty = parseFloat(c[2].querySelector('input').value);
+    if (!code || !(qty > 0)) return null;
+    return { sfgCode: code, qty: qty,
+             weight: parseFloat(c[3].querySelector('input').value) || 0,
+             expectedReturn: c[4].querySelector('input').value,
+             remarks: c[5].querySelector('input').value };
+  });
+  if (!lines.length) { showStatus('Add at least one valid line item', true); return; }
+  const skipPdf = document.getElementById('ajwo-skippdf').checked;
+  callServer('addJobWorkOutMultiLine', { skipPdf: skipPdf, date: date, jobWorkerCode: extractCode(jw), lineItems: lines }, 'ajwo-loading');
+}
+
+// Removed on form merge: onAdjCodeSelect / onAdjPreview were specific to the
+// single-line Adjustment form. The unified multi-line form uses the Bulk
+// adjustment row builders (addBadjRow / populateBadjCodeSelect / onBadjCodeChange).
+
+// ==================================================================
+// PHASE-EXT — FG / BOM / Tools / Kit / Edit form handlers
+// ==================================================================
+
+function submitAddFg() {
+  const name = requireField('afg-name', 'Item Name'); if (!name) return;
+  const uom = requireField('afg-uom', 'UOM'); if (!uom) return;
+  _tryAddWithDup('addFg', {
+    itemName: name, size: v('afg-size'), colour: v('afg-colour'), finish: v('afg-finish'),
+    uom: uom, openingQty: n('afg-opening'),
+  }, 'afg-loading');
+}
+
+function submitAddTool() {
+  const name = requireField('atool-name', 'Item Name'); if (!name) return;
+  const type = requireField('atool-type', 'Type'); if (!type) return;
+  callServer('addTool', {
+    itemName: name, type: type, serial: v('atool-serial'),
+    purchaseDate: v('atool-pdate'), purchaseValue: n('atool-pval'),
+    vendor: v('atool-vendor'),
+  }, 'atool-loading');
+}
+
+function submitIssueTool() {
+  const date = requireField('itool-date', 'Date'); if (!date) return;
+  const tool = requireField('itool-tool', 'Tool'); if (!tool) return;
+  const person = requireField('itool-person', 'Person / Site'); if (!person) return;
+  callServer('issueTool', {
+    date: date, toolCode: extractCode(tool), person: person,
+    expectedReturn: v('itool-return'), purpose: v('itool-purpose'), remarks: v('itool-remarks'),
+    atSite: document.getElementById('itool-atsite').checked,
+  }, 'itool-loading');
+}
+
+function submitReturnTool() {
+  const date = requireField('rtool-date', 'Date'); if (!date) return;
+  const ref = requireField('rtool-ref', 'Outstanding Movement'); if (!ref) return;
+  callServer('returnTool', {
+    date: date, refMovementNo: extractCode(ref),
+    condition: v('rtool-condition'), remarks: v('rtool-remarks'),
+  }, 'rtool-loading');
+}
+
+// Unified Tool Movement submit — routes to Issue or Return based on action radio.
+function submitToolMovement() {
+  const action = _toolAction();
+  if (action === 'return') return submitReturnTool();
+  return submitIssueTool();
+}
+
+function _toolAction() {
+  const r = document.querySelector('input[name="tool-action"]:checked');
+  return r ? r.value : 'issue';
+}
+
+function onToolActionChange() {
+  const action = _toolAction();
+  document.getElementById('tool-issue-block').style.display  = (action === 'issue')  ? '' : 'none';
+  document.getElementById('tool-return-block').style.display = (action === 'return') ? '' : 'none';
+}
+
+// --- BOM ---
+function onBomParentTypeChange() {
+  const type = document.getElementById('abom-ptype').value;
+  const sel = document.getElementById('abom-parent');
+  sel.innerHTML = '<option value="">-- select --</option>';
+  const source = (type === 'SFG') ? window._IMS.sfgs : window._IMS.fgs;
+  (source || []).forEach(function(v) {
+    const opt = document.createElement('option');
+    opt.value = v.label; opt.textContent = v.label;
+    opt.dataset.code = v.code;
+    sel.appendChild(opt);
+  });
+}
+
+function addBomLine() {
+  const tbody = document.querySelector('#abom-lines tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><select onchange="onBomCompTypeChange(this)"><option value="RM">RM</option><option value="SFG">SFG</option></select></td>' +
+    '<td><select class="comp-picker"><option value="">--</option></select></td>' +
+    '<td><input type="number" min="0.001" step="0.001"></td>' +
+    '<td><input type="text"></td>' +
+    '<td><button class="btn-danger btn-small" onclick="removeLine(this)">×</button></td>';
+  tbody.appendChild(tr);
+  populateBomCompPicker(tr.querySelector('.comp-picker'), 'RM');
+}
+
+function onBomCompTypeChange(sel) {
+  const type = sel.value;
+  const row = sel.closest('tr');
+  const picker = row.querySelector('.comp-picker');
+  populateBomCompPicker(picker, type);
+}
+
+function populateBomCompPicker(sel, type) {
+  sel.innerHTML = '<option value="">--</option>';
+  const source = (type === 'SFG') ? window._IMS.sfgs : window._IMS.items;
+  (source || []).forEach(function(v) {
+    const opt = document.createElement('option');
+    opt.value = v.label; opt.textContent = v.label;
+    opt.dataset.code = v.code;
+    sel.appendChild(opt);
+  });
+}
+
+function submitAddBom() {
+  const pt = requireField('abom-ptype', 'Parent Type'); if (!pt) return;
+  const par = requireField('abom-parent', 'Parent'); if (!par) return;
+  const rows = document.querySelectorAll('#abom-lines tbody tr');
+  const lines = [];
+  rows.forEach(function(r) {
+    const c = r.children;
+    const ct = c[0].querySelector('select').value;
+    const cc = extractCode(c[1].querySelector('select').value);
+    const q  = parseFloat(c[2].querySelector('input').value);
+    if (!cc || !(q > 0)) return;
+    lines.push({ componentType: ct, componentCode: cc, qty: q, notes: c[3].querySelector('input').value });
+  });
+  if (!lines.length) { showStatus('Add at least one valid component', true); return; }
+  callServer('addBom', { parentType: pt, parentCode: extractCode(par), lineItems: lines }, 'abom-loading');
+}
+
+// --- Edit BOM ---
+// Populated lazily when user switches to Edit mode (onBomModeChange).
+function loadEditBomPicker() {
+  google.script.run
+    .withSuccessHandler(function(list) {
+      const sel = document.getElementById('ebom-picker');
+      sel.innerHTML = '<option value="">-- select a BOM --</option>';
+      if (!list.length) {
+        const opt = document.createElement('option');
+        opt.value = ''; opt.textContent = '(No BOMs exist yet — use Add BOM)';
+        opt.disabled = true; sel.appendChild(opt);
+        return;
+      }
+      list.forEach(function(g) {
+        const opt = document.createElement('option');
+        opt.value = g.parentType + '|' + g.parentCode;
+        opt.textContent = g.label;
+        opt.dataset.type = g.parentType;
+        opt.dataset.code = g.parentCode;
+        sel.appendChild(opt);
+      });
+    })
+    .withFailureHandler(function(err) { showStatus('Failed to load BOMs: ' + err.message, true); })
+    .listBomParents();
+}
+
+function onEditBomPickerChange() {
+  const sel = document.getElementById('ebom-picker');
+  const opt = sel.options[sel.selectedIndex];
+  if (!opt || !opt.dataset.type) {
+    _toggleEditBomUI(false);
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(lines) {
+      _fillEditBomLines(lines);
+      _toggleEditBomUI(true);
+    })
+    .withFailureHandler(function(err) { showStatus('Failed to load BOM: ' + err.message, true); })
+    .getBomForEdit(opt.dataset.type, opt.dataset.code);
+}
+
+function _toggleEditBomUI(show) {
+  ['ebom-heading','ebom-lines','ebom-add-row-btn','ebom-hint','ebom-actions'].forEach(function(id) {
+    document.getElementById(id).style.display = show ? '' : 'none';
+  });
+}
+
+function _fillEditBomLines(lines) {
+  const tbody = document.querySelector('#ebom-lines tbody');
+  tbody.innerHTML = '';
+  lines.forEach(function(l) {
+    addEditBomLine();
+    const tr = tbody.lastElementChild;
+    tr.children[0].querySelector('select').value = l.componentType;
+    // Populate component picker for correct type, then set selected option
+    populateBomCompPicker(tr.querySelector('.comp-picker'), l.componentType);
+    const compSel = tr.querySelector('.comp-picker');
+    // Find matching option by code (dataset.code) since we store labels as values
+    for (let i = 0; i < compSel.options.length; i++) {
+      if (compSel.options[i].dataset.code === l.componentCode) {
+        compSel.selectedIndex = i;
+        break;
+      }
+    }
+    tr.children[2].querySelector('input').value = l.qty;
+    tr.children[3].querySelector('input').value = l.notes || '';
+  });
+  if (!lines.length) addEditBomLine();  // empty row so user can start fresh
+}
+
+function addEditBomLine() {
+  const tbody = document.querySelector('#ebom-lines tbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><select onchange="onEditBomCompTypeChange(this)"><option value="RM">RM</option><option value="SFG">SFG</option></select></td>' +
+    '<td><select class="comp-picker"><option value="">--</option></select></td>' +
+    '<td><input type="number" min="0.001" step="0.001"></td>' +
+    '<td><input type="text"></td>' +
+    '<td><button class="btn-danger btn-small" onclick="removeLine(this)">×</button></td>';
+  tbody.appendChild(tr);
+  populateBomCompPicker(tr.querySelector('.comp-picker'), 'RM');
+}
+
+function onEditBomCompTypeChange(sel) {
+  const type = sel.value;
+  populateBomCompPicker(sel.closest('tr').querySelector('.comp-picker'), type);
+}
+
+function submitEditBom() {
+  const picker = document.getElementById('ebom-picker');
+  const opt = picker.options[picker.selectedIndex];
+  if (!opt || !opt.dataset.type) { showStatus('Pick a BOM first', true); return; }
+  const rows = document.querySelectorAll('#ebom-lines tbody tr');
+  const lines = [];
+  rows.forEach(function(r) {
+    const c = r.children;
+    const ct = c[0].querySelector('select').value;
+    const cc = extractCode(c[1].querySelector('select').value);
+    const q  = parseFloat(c[2].querySelector('input').value);
+    if (!cc || !(q > 0)) return;
+    lines.push({ componentType: ct, componentCode: cc, qty: q, notes: c[3].querySelector('input').value });
+  });
+  if (!lines.length) { showStatus('Add at least one valid component (or use Delete BOM)', true); return; }
+  callServer('editBom', { parentType: opt.dataset.type, parentCode: opt.dataset.code, lineItems: lines }, 'ebom-loading');
+}
+
+function submitDeleteBom() {
+  const picker = document.getElementById('ebom-picker');
+  const opt = picker.options[picker.selectedIndex];
+  if (!opt || !opt.dataset.type) { showStatus('Pick a BOM first', true); return; }
+  if (!confirm('Delete the entire BOM for ' + opt.dataset.type + ' ' + opt.dataset.code + '?\n\nAll component lines will be removed. This cannot be undone.')) return;
+  callServer('deleteBom', { parentType: opt.dataset.type, parentCode: opt.dataset.code }, 'ebom-loading');
+}
+
+// Unified Recipe submit — routes to New or Edit based on mode radio.
+function submitRecipe() {
+  const mode = _bomMode();
+  if (mode === 'edit') return submitEditBom();
+  return submitAddBom();
+}
+
+function _bomMode() {
+  const r = document.querySelector('input[name="bom-mode"]:checked');
+  return r ? r.value : 'new';
+}
+
+function onBomModeChange() {
+  const mode = _bomMode();
+  document.getElementById('bom-new-block').style.display  = (mode === 'new')  ? '' : 'none';
+  document.getElementById('bom-edit-block').style.display = (mode === 'edit') ? '' : 'none';
+  // Delete button only makes sense in Edit mode after a picker selection
+  const delBtn = document.getElementById('bom-delete-btn');
+  if (delBtn) delBtn.style.display = (mode === 'edit') ? '' : 'none';
+  if (mode === 'edit') {
+    const sel = document.getElementById('ebom-picker');
+    if (sel && sel.options.length <= 1) loadEditBomPicker();
+  }
+}
+
+// --- Kit Builder ---
+function submitKitBuilder() {
+  const date = requireField('akit-date', 'Date'); if (!date) return;
+  const fg = requireField('akit-fg', 'FG'); if (!fg) return;
+  const qty = n('akit-qty'); if (!(qty > 0)) { showStatus('Order Qty must be > 0', true); return; }
+  callServer('buildKit', { date: date, fgCode: extractCode(fg), qty: qty }, 'akit-loading');
+}
+
+// --- Edit forms ---
+function loadEditRecord(kind) {
+  const pickerMap = { item:'eitem', sfg:'esfg', fg:'efg', supplier:'esup', jobworker:'ejw' };
+  const sheetMap  = { item:'Item Master', sfg:'SFG Master', fg:'FG Master', supplier:'Supplier Master', jobworker:'Job Worker Master' };
+  const prefix = pickerMap[kind];
+  const code = extractCode(v(prefix + '-picker'));
+  if (!code) return;
+  google.script.run.withSuccessHandler(function(row) {
+    if (!row) { showStatus('Record not found', true); return; }
+    fillEditForm(kind, row);
+  }).withFailureHandler(function(e) { showStatus('Load failed: ' + e.message, true); })
+  .getMasterRowForEdit(sheetMap[kind], code);
+}
+
+function fillEditForm(kind, row) {
+  // row is a 0-indexed array reflecting the v3.5 master sheet columns.
+  if (kind === 'item') {
+    // v3.5: A=0,B=Photo,C=Desc,D=Name,E=Size,F=Grade,G=UOM,H=Cat,I=MatType,J=Storage,K=Rack,L=HSN,M=PrefSup,Q=MIN,R=MAX,S=Active
+    setV('eitem-code', row[0]);
+    setV('eitem-name', row[3]);
+    setV('eitem-size', row[4]);
+    setV('eitem-grade', row[5]);
+    setV('eitem-uom', row[6]);
+    setV('eitem-category', row[7]);
+    setV('eitem-mattype', row[8]);
+    setV('eitem-storage', row[9]);
+    setV('eitem-rack', row[10]);
+    setV('eitem-hsn', row[11]);
+    setV('eitem-min', row[16]);
+    setV('eitem-max', row[17]);
+    document.getElementById('eitem-active').checked = row[18] !== false;
+    setV('eitem-rate', row[20]);  // col U (idx 20) = Avg Rate (Rs.) after Sqm per Unit col removed
+  } else if (kind === 'sfg') {
+    // v3.5: A=0,B=Photo,C=Desc,D=Name,E=Size,F=Color,G=UOM,H=Storage,I=MIN,J=MAX,K=Active
+    setV('esfg-code', row[0]); setV('esfg-name', row[3]); setV('esfg-size', row[4]);
+    setV('esfg-color', row[5]); setV('esfg-uom', row[6]); setV('esfg-storage', row[7]);
+    setV('esfg-min', row[8]); setV('esfg-max', row[9]);
+    document.getElementById('esfg-active').checked = row[10] !== false;
+  } else if (kind === 'fg') {
+    // v3.5: A=0,B=Photo,C=Desc,D=Name,E=Size,F=Colour,G=Finish,H=UOM,I=Active
+    setV('efg-code', row[0]); setV('efg-name', row[3]); setV('efg-size', row[4]);
+    setV('efg-colour', row[5]); setV('efg-finish', row[6]); setV('efg-uom', row[7]);
+    document.getElementById('efg-active').checked = row[8] !== false;
+  } else if (kind === 'supplier') {
+    setV('esup-code', row[0]); setV('esup-name', row[1]); setV('esup-cat', row[2]);
+    setV('esup-contact', row[3]); setV('esup-mobile', row[4]); setV('esup-email', row[5]);
+    setV('esup-gst', row[6]); setV('esup-address', row[7]);
+    document.getElementById('esup-active').checked = row[8] !== false;
+  } else if (kind === 'jobworker') {
+    setV('ejw-code', row[0]); setV('ejw-name', row[1]); setV('ejw-process', row[2]);
+    setV('ejw-contact', row[3]); setV('ejw-mobile', row[4]); setV('ejw-email', row[5]);
+    setV('ejw-gst', row[6]); setV('ejw-address', row[7]);
+    document.getElementById('ejw-active').checked = row[8] !== false;
+  }
+}
+function setV(id, val) { const e = document.getElementById(id); if (e) e.value = (val == null || val === '') ? '' : val; }
+
+function submitEditItem() {
+  const code = v('eitem-code'); if (!code) { showStatus('Pick an item first', true); return; }
+  callServer('editItem', {
+    code: code, itemName: v('eitem-name'), size: v('eitem-size'), grade: v('eitem-grade'),
+    uom: v('eitem-uom'), category: v('eitem-category'), materialType: v('eitem-mattype'),
+    storage: v('eitem-storage'), rack: v('eitem-rack'), hsn: v('eitem-hsn'),
+    minLvl: n('eitem-min'), maxLvl: n('eitem-max'),
+    active: document.getElementById('eitem-active').checked,
+    avgRate:    n('eitem-rate'),
+  }, 'eitem-loading');
+}
+function submitEditSfg() {
+  const code = v('esfg-code'); if (!code) { showStatus('Pick an SFG first', true); return; }
+  callServer('editSfg', {
+    code: code, itemName: v('esfg-name'), size: v('esfg-size'), color: v('esfg-color'),
+    uom: v('esfg-uom'), storage: v('esfg-storage'),
+    minLvl: n('esfg-min'), maxLvl: n('esfg-max'),
+    active: document.getElementById('esfg-active').checked,
+  }, 'esfg-loading');
+}
+function submitEditFg() {
+  const code = v('efg-code'); if (!code) { showStatus('Pick an FG first', true); return; }
+  callServer('editFg', {
+    code: code, itemName: v('efg-name'), size: v('efg-size'), colour: v('efg-colour'),
+    finish: v('efg-finish'), uom: v('efg-uom'),
+    active: document.getElementById('efg-active').checked,
+  }, 'efg-loading');
+}
+function submitEditSupplier() {
+  const code = v('esup-code'); if (!code) { showStatus('Pick a supplier first', true); return; }
+  callServer('editSupplier', {
+    code: code, firmName: v('esup-name'), category: v('esup-cat'), contact: v('esup-contact'),
+    mobile: v('esup-mobile'), email: v('esup-email'), gst: v('esup-gst'), address: v('esup-address'),
+    active: document.getElementById('esup-active').checked,
+  }, 'esup-loading');
+}
+function submitEditJobWorker() {
+  const code = v('ejw-code'); if (!code) { showStatus('Pick a job worker first', true); return; }
+  callServer('editJobWorker', {
+    code: code, firmName: v('ejw-name'), processType: v('ejw-process'), contact: v('ejw-contact'),
+    mobile: v('ejw-mobile'), email: v('ejw-email'), gst: v('ejw-gst'), address: v('ejw-address'),
+    active: document.getElementById('ejw-active').checked,
+  }, 'ejw-loading');
+}
+
+// ============================================================================
+// Unified Master form routers — each merged master form (Item/SFG/FG/Supplier/
+// Job Worker) has a mode radio (New/Edit) and two visibility-toggled blocks.
+// The one Save button at the bottom routes to the matching Add or Edit handler
+// based on the active mode. All original submit*Add / submit*Edit functions
+// stay unchanged — these are thin dispatchers.
+// ============================================================================
+// Short prefix per kind (matches the radio `name` and block id prefixes above).
+const _MASTER_PREFIX = { item: 'mitem', sfg: 'msfg', fg: 'mfg', supplier: 'msup', jobworker: 'mjw' };
+function _masterMode(kind) {
+  const prefix = _MASTER_PREFIX[kind]; if (!prefix) return 'new';
+  const r = document.querySelector('input[name="' + prefix + '-mode"]:checked');
+  return r ? r.value : 'new';
+}
+function onMasterModeChange(kind) {
+  const prefix = _MASTER_PREFIX[kind]; if (!prefix) return;
+  const mode = _masterMode(kind);
+  const nb = document.getElementById(prefix + '-new-block');
+  const eb = document.getElementById(prefix + '-edit-block');
+  if (nb) nb.style.display = (mode === 'new')  ? '' : 'none';
+  if (eb) eb.style.display = (mode === 'edit') ? '' : 'none';
+  // When switching to edit, make sure the picker is populated (lazy-load).
+  if (mode === 'edit' && window._loadEditPickerIfEmpty) window._loadEditPickerIfEmpty(kind);
+}
+function submitMasterItem()      { return _masterMode('item')      === 'edit' ? submitEditItem()      : submitAddItem(); }
+function submitMasterSfg()       { return _masterMode('sfg')       === 'edit' ? submitEditSfg()       : submitAddSfg(); }
+function submitMasterFg()        { return _masterMode('fg')        === 'edit' ? submitEditFg()        : submitAddFg(); }
+function submitMasterSupplier()  { return _masterMode('supplier')  === 'edit' ? submitEditSupplier()  : submitAddSupplier(); }
+function submitMasterJobWorker() { return _masterMode('jobworker') === 'edit' ? submitEditJobWorker() : submitAddJobWorker(); }
+
+function submitRfq() {
+  const date = requireField('arfq-date', 'Date'); if (!date) return;
+  const lines = collectLines('arfq', function(r) {
+    const cells = r.children;
+    const code = extractCode(cells[0].querySelector('select').value);
+    const size = cells[2].querySelector('input').value.trim();
+    const colour = cells[3].querySelector('input').value.trim();
+    const qty  = parseFloat(cells[4].querySelector('input').value);
+    if (!code || !(qty > 0)) return null;
+    return {
+      itemCode: code, size: size, colour: colour, qty: qty,
+      remarks: cells[5].querySelector('input').value,
+    };
+  });
+  if (!lines.length) { showStatus('Add at least one valid line item', true); return; }
+  const skipPdf = document.getElementById('arfq-skippdf').checked;
+  callServer('addRfq', {
+    skipPdf: skipPdf, date: date,
+    purpose: v('arfq-purpose'),
+    validUntil: v('arfq-valid'),
+    lineItems: lines,
+  }, 'arfq-loading');
+}
+
+function submitPo() {
+  const date = requireField('apo-date', 'Date'); if (!date) return;
+  const sup = requireField('apo-supplier', 'Supplier'); if (!sup) return;
+  const lines = collectLines('apo', function(r) {
+    const cells = r.children;
+    const code = extractCode(cells[0].querySelector('select').value);
+    const sqmPerUnit = parseFloat(cells[2].querySelector('input').value) || 0;
+    const pcs = parseFloat(cells[3].querySelector('input').value) || 0;
+    const qty = parseFloat(cells[4].querySelector('input').value);
+    const rate = parseFloat(cells[5].querySelector('input').value);
+    if (!code || !(qty > 0) || !(rate >= 0)) return null;
+    const discMode = cells[6].querySelector('select.disc-mode') ? cells[6].querySelector('select.disc-mode').value : 'pct';
+    const discVal = parseFloat(cells[6].querySelector('input').value) || 0;
+    return {
+      itemCode: code, qty: qty, pcs: pcs, sqmPerUnit: sqmPerUnit, rate: rate,
+      discount: discVal, discountMode: discMode,
+      gst: parseFloat(cells[7].querySelector('input').value) || 0,
+      remarks: cells[8].querySelector('input').value,
+    };
+  });
+  if (!lines.length) { showStatus('Add at least one valid line item', true); return; }
+  if (!_confirmIfHighValue(lines, 'PO')) return;
+  const skipPdf = document.getElementById('apo-skippdf').checked;
+  const diffShip = document.getElementById('apo-diff-ship').checked;
+  const verifyOn = document.getElementById('apo-verify-party').checked;
+  callServer('addPoMultiLine', {
+    skipPdf: skipPdf, date: date, supplierCode: extractCode(sup),
+    deliveryDate: v('apo-delivery'), remarks: v('apo-remarks'),
+    lineItems: lines,
+    shipToName:    diffShip ? v('apo-shipto-name')    : '',
+    shipToAddress: diffShip ? v('apo-shipto-address') : '',
+    shipToGstin:   diffShip ? v('apo-shipto-gstin')   : '',
+    shipToContact: diffShip ? v('apo-shipto-contact') : '',
+    // Verify-mode overrides — only sent if user opened the block (else server uses Master/Config defaults)
+    supplierNameOverride:    verifyOn ? v('apo-sup-name')    : '',
+    supplierAddressOverride: verifyOn ? v('apo-sup-address') : '',
+    supplierGstinOverride:   verifyOn ? v('apo-sup-gstin')   : '',
+    supplierContactOverride: verifyOn ? v('apo-sup-contact') : '',
+    billToName:    verifyOn ? v('apo-bill-name')    : '',
+    billToAddress: verifyOn ? v('apo-bill-address') : '',
+    billToGstin:   verifyOn ? v('apo-bill-gstin')   : '',
+    billToContact: verifyOn ? v('apo-bill-contact') : '',
+  }, 'apo-loading');
+}
+
+// ============================================================================
+// PO AMENDMENT — client wiring
+// Form has an own line-row template (compact: Item, Desc, Qty, Rate, Disc, GST,
+// Recv, delete). No sqm/pcs cols — amendment is purely about qty/rate changes.
+// ============================================================================
+
+// Row builder for Amend PO. Adds a line row + populates its item dropdown.
+function addAmpLine(preset) {
+  const tbody = document.querySelector('#amp-lines tbody');
+  if (!tbody) return;
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td><select onchange="onAmpItemLookup(this)"><option value="">--</option></select></td>' +
+    '<td class="desc"></td>' +
+    '<td><input type="number" min="0" step="0.01"></td>' +
+    '<td><input type="number" min="0" step="0.01"></td>' +
+    '<td style="display:flex;gap:4px;"><select class="disc-mode" style="width:58px;flex-shrink:0;" title="% of line / flat Rs"><option value="pct">%</option><option value="amt">Rs</option></select><input type="number" min="0" step="0.01" value="0" style="flex:1;min-width:0;"></td>' +
+    '<td><input type="number" min="0" max="100" value="18"></td>' +
+    '<td><input type="number" min="0" step="0.01" value="0" readonly style="background:#f6f6f6;" title="Already Received Qty — carried over, read-only"></td>' +
+    '<td><button class="btn-danger btn-small" onclick="removeLine(this); recalcTotals(\'amp\');">×</button></td>';
+  tbody.appendChild(tr);
+  // Populate the item dropdown from window._IMS
+  const sel = tr.querySelector('select');
+  if (sel && window._IMS && window._IMS.items) {
+    window._IMS.items.forEach(function(v) {
+      const opt = document.createElement('option');
+      const label = v.label || (v.code + ' — ' + v.desc);
+      opt.value = label; opt.textContent = label;
+      opt.dataset.code = v.code;
+      opt.dataset.desc = v.desc || '';
+      opt.dataset.uom  = v.uom || '';
+      sel.appendChild(opt);
+    });
+  }
+  // Pre-fill from preset (used when loading PO lines)
+  if (preset) {
+    const cells = tr.children;
+    // Find and select the option matching the itemCode
+    const sopt = Array.from(sel.options).find(function(o) { return o.dataset.code === preset.itemCode; });
+    if (sopt) sel.value = sopt.value;
+    cells[1].textContent = preset.itemDesc || (sopt ? sopt.dataset.desc : '');
+    cells[2].querySelector('input').value = preset.qty || 0;
+    cells[3].querySelector('input').value = preset.rate || 0;
+    cells[4].querySelector('input').value = preset.discount || 0;
+    cells[5].querySelector('input').value = (preset.gst != null ? preset.gst : 18);
+    cells[6].querySelector('input').value = preset.receivedQty || 0;
+  }
+  recalcTotals('amp');
+}
+
+function onAmpItemLookup(sel) {
+  const row = sel.closest('tr');
+  const opt = sel.options[sel.selectedIndex];
+  row.querySelector('.desc').textContent = opt ? (opt.dataset.desc || '') : '';
+}
+
+// Called when user picks a PO from the dropdown — fetches full PO data and
+// populates header fields + lines table.
+function onAmendPoSelect() {
+  const raw = document.getElementById('amp-po').value;
+  const poNo = extractCode(raw);
+  const tbody = document.querySelector('#amp-lines tbody');
+  const caption = document.getElementById('amp-lines-caption');
+  const revInfo = document.getElementById('amp-rev-info');
+  tbody.innerHTML = '';
+  caption.textContent = '';
+  revInfo.textContent = '';
+  if (!poNo) return;
+  setLoading('amp-loading', true);
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading('amp-loading', false);
+      if (!res || !res.success) { showStatus('Could not load PO: ' + ((res && res.message) || 'unknown error'), true); return; }
+      document.getElementById('amp-sup').value     = res.supplierName + ' (' + res.supplierCode + ')';
+      document.getElementById('amp-status').value  = res.status || '';
+      document.getElementById('amp-date').value    = res.date || '';
+      document.getElementById('amp-deldate').value = res.deliveryDate || '';
+      document.getElementById('amp-remarks').value = res.remarks || '';
+      caption.textContent = '(' + res.lines.length + ' line(s))';
+      let revText = 'Current revision: R' + (res.currentRev || 0) + '. Next save will become R' + ((res.currentRev || 0) + 1) + '.';
+      if (res.grnCount > 0) revText += ' ⚠ ' + res.grnCount + ' GRN row(s) exist against this PO — you will get a confirm dialog before overwrite.';
+      revInfo.textContent = revText;
+      res.lines.forEach(function(l) { addAmpLine(l); });
+      if (!res.lines.length) addAmpLine();  // start with one empty row if no lines
+      recalcTotals('amp');
+    })
+    .withFailureHandler(function(err) {
+      setLoading('amp-loading', false);
+      showStatus('Server error loading PO: ' + err.message, true);
+    })
+    .getPoForAmend(poNo);
+}
+
+function submitAmendPo() {
+  const poRaw = requireField('amp-po', 'PO'); if (!poRaw) return;
+  const poNo = extractCode(poRaw);
+  const lines = collectLines('amp', function(r) {
+    const c = r.children;
+    const code = extractCode(c[0].querySelector('select').value);
+    const qty  = parseFloat(c[2].querySelector('input').value);
+    const rate = parseFloat(c[3].querySelector('input').value);
+    if (!code || !(qty > 0) || !(rate >= 0)) return null;
+    const discMode = c[4].querySelector('select.disc-mode') ? c[4].querySelector('select.disc-mode').value : 'pct';
+    const discVal = parseFloat(c[4].querySelector('input').value) || 0;
+    return {
+      itemCode: code, qty: qty, rate: rate,
+      discount: discVal, discountMode: discMode,
+      gst: parseFloat(c[5].querySelector('input').value) || 0,
+      receivedQty: parseFloat(c[6].querySelector('input').value) || 0,
+    };
+  });
+  if (!lines.length) { showStatus('Add at least one valid line item', true); return; }
+  if (!_confirmIfHighValue(lines, 'Amendment')) return;
+  const skipPdf = document.getElementById('amp-skippdf').checked;
+  // First attempt without forceAmend — server may ask to confirm if GRNs exist.
+  _amendPoCall({
+    skipPdf: skipPdf, poNo: poNo,
+    date: v('amp-date'), deliveryDate: v('amp-deldate'),
+    remarks: v('amp-remarks'), lineItems: lines, forceAmend: false,
+  });
+}
+
+function _amendPoCall(payload) {
+  setLoading('amp-loading', true);
+  google.script.run
+    .withSuccessHandler(function(res) {
+      setLoading('amp-loading', false);
+      if (res && res.success) {
+        showStatus(res.message, false);
+        if (res.pdfDownloadUrl) window.open(res.pdfDownloadUrl, '_blank');
+        setTimeout(closeForm, 1500);
+        return;
+      }
+      if (res && res.needsConfirm) {
+        if (confirm(res.message + '\n\nProceed with amendment?')) {
+          _amendPoCall(Object.assign({}, payload, { forceAmend: true }));
+        }
+        return;
+      }
+      showStatus((res && res.message) || 'Amendment failed', true);
+    })
+    .withFailureHandler(function(err) {
+      setLoading('amp-loading', false);
+      showStatus('Server error: ' + err.message, true);
+    })
+    .amendPo(payload);
+}
+
+// Old single-line submitAdjustment and its helpers removed on form merge —
+// single-line is now just a 1-row case of the unified bulk form (submitAdjustment
+// below routes through addBulkAdjustment with d.type).
+
+function submitJobWorkIn() {
+  const date = requireField('ajwi-date', 'Date'); if (!date) return;
+  const refRaw = requireField('ajwi-ref', 'Reference Challan'); if (!refRaw) return;
+  const ref = extractCode(refRaw);
+  const rows = document.querySelectorAll('#ajwi-lines tbody tr');
+  const lines = [];
+  rows.forEach(function(r) {
+    const c = r.children;
+    const qtyRecv = parseFloat(c[3].querySelector('input').value);
+    if (!(qtyRecv > 0)) return;
+    lines.push({
+      sfgCode: r.dataset.sfg,
+      qtyReceived: qtyRecv,
+      yieldLoss: parseFloat(c[4].querySelector('input').value) || 0,
+      rejection: parseFloat(c[5].querySelector('input').value) || 0,
+      remarks: c[6].querySelector('input').value,
+    });
+  });
+  if (!lines.length) { showStatus('Enter Qty Received on at least one line', true); return; }
+  const skipPdf = document.getElementById('ajwi-skippdf').checked;
+  callServer('addJobWorkInMultiLine', { skipPdf: skipPdf, date: date, referenceChallan: ref, lineItems: lines }, 'ajwi-loading');
+}
+
+// -------- Bulk Adjustment (set or ±) --------
+// Columns: 0=±chk, 1=Code, 2=Desc(readonly), 3=Quantity, 4=UOM(readonly), 5=Remarks, 6=Delete btn
+function addBadjRow() {
+  const tb = document.querySelector('#badj-lines tbody');
+  const row = tb.insertRow();
+  row.innerHTML = '<td style="text-align:center;"><input type="checkbox" onchange="onBadjModeChange(this)" title="Tick to add/subtract instead of setting final qty"></td>'
+    + '<td><select onchange="onBadjCodeChange(this)"><option value="">-- select item --</option></select></td>'
+    + '<td><input class="readonly" readonly></td>'
+    + '<td><input type="number" step="0.01" placeholder="final qty"></td>'
+    + '<td><input class="readonly" readonly></td>'
+    + '<td><input type="text"></td>'
+    + '<td><button class="btn-danger btn-small" onclick="this.parentElement.parentElement.remove()">×</button></td>';
+  populateBadjCodeSelect(row.children[1].querySelector('select'));
+}
+
+// When ± toggled: update qty input placeholder + min. Delta allows negative.
+function onBadjModeChange(chk) {
+  const row = chk.closest('tr');
+  const qty = row.children[3].querySelector('input');
+  if (chk.checked) {
+    qty.placeholder = '+ or -';
+    qty.removeAttribute('min');
+  } else {
+    qty.placeholder = 'final qty';
+    qty.min = 0;
+  }
+}
+
+// Populate a badj row's code select from window._IMS. Safe to call multiple times.
+// Merges Item + SFG + FG + Tool masters into one dropdown.
+function populateBadjCodeSelect(sel) {
+  if (!sel) return;
+  const src = window._IMS || {};
+  const items = (src.items || []).concat(src.sfgs || []).concat(src.fgs || []).concat(src.tools || []);
+  while (sel.options.length > 1) sel.remove(1);
+  if (!items.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '(No items — check masters)';
+    opt.disabled = true;
+    sel.appendChild(opt);
+    return;
+  }
+  items.forEach(function(item) {
+    const opt = document.createElement('option');
+    const label = item.label || (item.code + ' — ' + (item.desc || ''));
+    opt.value = label;
+    opt.textContent = label;
+    opt.dataset.code = item.code;
+    opt.dataset.desc = item.desc || '';
+    opt.dataset.uom = item.uom || '';
+    sel.appendChild(opt);
+  });
+}
+
+// On code select: pull desc + UOM, focus Quantity field
+function onBadjCodeChange(sel) {
+  const row = sel.closest('tr');
+  const opt = sel.options[sel.selectedIndex];
+  row.children[2].querySelector('input').value = (opt && opt.dataset.desc) || '';
+  row.children[4].querySelector('input').value = (opt && opt.dataset.uom) || '';
+  if (opt && opt.dataset.code) row.children[3].querySelector('input').focus();
+}
+
+function submitAdjustment() {
+  const date = requireField('badj-date', 'Date'); if (!date) return;
+  const type = requireField('badj-type', 'Type'); if (!type) return;
+  const rows = document.querySelectorAll('#badj-lines tbody tr');
+  const lines = [];
+  let incomplete = 0;
+  rows.forEach(function(r) {
+    const c = r.children;
+    const deltaMode = c[0].querySelector('input').checked;
+    const codeRaw = c[1].querySelector('select').value;
+    const qty = c[3].querySelector('input').value;
+    if (!codeRaw && qty === '') return;
+    if (!codeRaw || qty === '') { incomplete++; return; }
+    const line = {
+      code: extractCode(codeRaw),
+      deltaMode: deltaMode,
+      remarks: c[5].querySelector('input').value,
+    };
+    if (deltaMode) line.qty = Number(qty);
+    else line.targetQty = Number(qty);
+    lines.push(line);
+  });
+  if (incomplete) { showStatus(incomplete + ' row(s) incomplete — fill both Code and Quantity, or delete the row.', true); return; }
+  if (!lines.length) { showStatus('Add at least one line: pick an item and enter Quantity.', true); return; }
+  callServer('addBulkAdjustment', { date: date, type: type, lineItems: lines }, 'badj-loading');
+}
+
+// -------- QC Record --------
+// Cache of lines-for-current-refNo so onQcRefLineChange can populate fields
+// without another server round-trip.
+let _qcLinesCache = [];
+
+function onQcSourceChange() {
+  const src = v('qc-source');
+  const refSel  = document.getElementById('qc-refno');
+  const lineSel = document.getElementById('qc-refline');
+  refSel.innerHTML  = '<option value="">-- loading --</option>';
+  lineSel.innerHTML = '<option value="">-- pick ref first --</option>';
+  _qcLinesCache = [];
+  if (!src) { refSel.innerHTML = '<option value="">-- pick source first --</option>'; return; }
+  if (src === 'Manual') {
+    refSel.innerHTML = '<option value="">(manual — leave blank or type freely)</option>';
+    refSel.disabled = false;
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(list) {
+      refSel.innerHTML = '<option value="">-- select --</option>';
+      (list || []).forEach(function(x) {
+        const opt = document.createElement('option');
+        opt.value = x.docNo;
+        opt.textContent = x.docNo + (x.date ? ' (' + x.date + ')' : '');
+        refSel.appendChild(opt);
+      });
+    })
+    .withFailureHandler(function(e) { refSel.innerHTML = '<option value="">Error: ' + e.message + '</option>'; })
+    .getQcRefNoList(src);
+}
+
+function onQcRefNoChange() {
+  const src = v('qc-source');
+  const ref = v('qc-refno');
+  const lineSel = document.getElementById('qc-refline');
+  lineSel.innerHTML = '<option value="">-- loading --</option>';
+  _qcLinesCache = [];
+  if (!ref || src === 'Manual') { lineSel.innerHTML = '<option value="">(manual — type in fields below)</option>'; return; }
+  google.script.run
+    .withSuccessHandler(function(lines) {
+      _qcLinesCache = lines || [];
+      lineSel.innerHTML = '<option value="">-- pick material --</option>';
+      _qcLinesCache.forEach(function(l, i) {
+        const opt = document.createElement('option');
+        opt.value = String(i);  // index into cache
+        opt.textContent = (l.line || '') + (l.material ? ' — ' + l.material : '');
+        lineSel.appendChild(opt);
+      });
+    })
+    .withFailureHandler(function(e) { lineSel.innerHTML = '<option value="">Error: ' + e.message + '</option>'; })
+    .getQcSourceLines(src, ref);
+}
+
+function onQcRefLineChange() {
+  const idx = v('qc-refline');
+  if (idx === '' || !_qcLinesCache[Number(idx)]) return;
+  const l = _qcLinesCache[Number(idx)];
+  document.getElementById('qc-vendor').value      = l.vendor || '';
+  document.getElementById('qc-material').value    = l.material || '';
+  document.getElementById('qc-po').value          = l.po || '';
+  document.getElementById('qc-orderedqty').value  = l.orderedQty || '';
+  document.getElementById('qc-receivedqty').value = l.receivedQty || '';
+  // Date: convert to YYYY-MM-DD for <input type=date>
+  if (l.deliveryDate) {
+    const d = new Date(l.deliveryDate);
+    if (!isNaN(d)) document.getElementById('qc-deldate').value = d.toISOString().slice(0, 10);
+  }
+  // Auto-compute short/excess (received - ordered)
+  const ord = Number(l.orderedQty) || 0;
+  const rec = Number(l.receivedQty) || 0;
+  if (ord && rec) {
+    const diff = rec - ord;
+    document.getElementById('qc-shortexcess').value =
+      diff === 0 ? 'Correct' : (diff > 0 ? 'Excess ' + diff : 'Short ' + Math.abs(diff));
+  }
+}
+
+function submitQcRecord() {
+  const src = requireField('qc-source', 'Source Type'); if (!src) return;
+  const outcome = requireField('qc-outcome', 'Overall Outcome'); if (!outcome) return;
+  const lineIdx = v('qc-refline');
+  const refLine = (src !== 'Manual' && lineIdx !== '' && _qcLinesCache[Number(lineIdx)])
+    ? (_qcLinesCache[Number(lineIdx)].line || '') : v('qc-refline');
+  callServer('addQcRecord', {
+    sourceType: src, refNo: v('qc-refno'), refLine: refLine,
+    overallOutcome: outcome,
+    vendorName: v('qc-vendor'), materialName: v('qc-material'), poNo: v('qc-po'),
+    deliveryDate: v('qc-deldate'), checkedByBasic: v('qc-basic-by'),
+    orderedQty: v('qc-orderedqty'), receivedQty: v('qc-receivedqty'), shortExcess: v('qc-shortexcess'),
+    statusQty: v('qc-status-qty'), checkedByQty: v('qc-qty-by'),
+    anyDamage: v('qc-damage'), packagingCondition: v('qc-packaging'),
+    leakageBreakage: v('qc-leakage'), properLabeling: v('qc-labeling'),
+    statusVisual: v('qc-status-visual'), checkedByVisual: v('qc-visual-by'),
+    sizePlanned: v('qc-size-plan'), sizeActual: v('qc-size-actual'),
+    weightPlanned: v('qc-weight-plan'), weightActual: v('qc-weight-actual'),
+    colourPlanned: v('qc-colour-plan'), colourActual: v('qc-colour-actual'),
+    materialGradePlanned: v('qc-grade-plan'), materialGradeActual: v('qc-grade-actual'),
+    statusSpec: v('qc-status-spec'), checkedBySpec: v('qc-spec-by'),
+    worksAsExpected: v('qc-works'), trialDone: v('qc-trial'),
+    outputAcceptable: v('qc-output'), documentAttached: v('qc-doc'),
+  }, 'qc-loading');
+}
+
+// -------- Reservation (Add + Release) --------
+function _wireReservationCodeChange() {
+  const sel = document.getElementById('ares-code');
+  if (!sel) return;
+  sel.addEventListener('change', function() {
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById('ares-uom').value = (opt && opt.dataset.uom) || '';
+  });
+}
+
+function submitAddReservation() {
+  const date = requireField('ares-date', 'Date'); if (!date) return;
+  const codeRaw = requireField('ares-code', 'Code'); if (!codeRaw) return;
+  const qty = v('ares-qty');
+  if (qty === '' || Number(qty) <= 0) { showStatus('Qty must be > 0', true); return; }
+  const forRef = requireField('ares-for', 'For (Reference)'); if (!forRef) return;
+  callServer('addReservation', {
+    date: date, code: extractCode(codeRaw), qty: Number(qty),
+    forRef: forRef, notes: v('ares-notes'),
+  }, 'ares-loading');
+}
+
+// Unified Reservation submit — routes to New or Release based on mode radio.
+function submitReservation() {
+  const mode = _resMode();
+  if (mode === 'release') return submitReleaseReservation();
+  return submitAddReservation();
+}
+
+function _resMode() {
+  const r = document.querySelector('input[name="res-mode"]:checked');
+  return r ? r.value : 'new';
+}
+
+// Toggle visible block + load reservations lazily when switching to Release mode.
+function onReservationModeChange() {
+  const mode = _resMode();
+  document.getElementById('res-new-block').style.display     = (mode === 'new')     ? '' : 'none';
+  document.getElementById('res-release-block').style.display = (mode === 'release') ? '' : 'none';
+  if (mode === 'release') {
+    const sel = document.getElementById('rres-picker');
+    // Only (re)load if empty — avoids wiping a user's selection on tab back-and-forth
+    if (sel && sel.options.length <= 1) loadActiveReservations();
+  }
+}
+
+function loadActiveReservations() {
+  const sel = document.getElementById('rres-picker');
+  sel.innerHTML = '<option value="">-- loading --</option>';
+  google.script.run
+    .withSuccessHandler(function(list) {
+      sel.innerHTML = '<option value="">-- pick reservation --</option>';
+      if (!list || !list.length) {
+        const opt = document.createElement('option');
+        opt.value = ''; opt.textContent = '(No active reservations)'; opt.disabled = true;
+        sel.appendChild(opt); return;
+      }
+      list.forEach(function(r) {
+        const opt = document.createElement('option');
+        opt.value = r.resNo;
+        opt.textContent = r.label;
+        opt.dataset.code = r.code;
+        opt.dataset.qty  = r.qty;
+        opt.dataset.uom  = r.uom;
+        opt.dataset.for  = r.forRef;
+        sel.appendChild(opt);
+      });
+    })
+    .withFailureHandler(function(e) { sel.innerHTML = '<option value="">Error: ' + e.message + '</option>'; })
+    .getActiveReservations();
+}
+
+function onReleaseResPickerChange() {
+  const sel = document.getElementById('rres-picker');
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('rres-code').value = (opt && opt.dataset.code) || '';
+  document.getElementById('rres-qty').value  = opt && opt.dataset.qty ? (opt.dataset.qty + ' ' + (opt.dataset.uom || '')) : '';
+  document.getElementById('rres-for').value  = (opt && opt.dataset.for) || '';
+}
+
+function submitReleaseReservation() {
+  const resNo = requireField('rres-picker', 'Reservation'); if (!resNo) return;
+  const status = requireField('rres-status', 'Status'); if (!status) return;
+  callServer('releaseReservation', {
+    resNo: resNo, status: status, notes: v('rres-notes'),
+  }, 'rres-loading');
+}
+
+// -------- tiny value getters --------
+function v(id) { const e = document.getElementById(id); return e ? e.value : ''; }
+function n(id) { const s = v(id); return s === '' ? '' : Number(s); }
+// Extract "CODE" from a composite "CODE — Desc | Attr | Attr" dropdown value.
+// Idempotent — returns input trimmed if no separator.
+function extractCode(s) {
+  if (!s) return '';
+  const str = String(s).trim();
+  const idx = str.indexOf(' — ');
+  return idx > 0 ? str.substring(0, idx).trim() : str;
+}
+
+// Extract comma-separated codes from a value that may contain composite labels.
+// 'SUPP-0001 — Firm A, SUPP-0002 — Firm B' → 'SUPP-0001, SUPP-0002'.
+function _extractCodesCsv(s) {
+  if (!s) return '';
+  return String(s).split(',').map(function(part) { return extractCode(part.trim()); }).filter(Boolean).join(', ');
+}
+
+// ==================================================================
+// BULK EDIT + BULK PHOTOS
+// ==================================================================
+var _BULK_RECORDS = [];
+var _BULK_FIELDS = [];
+var _BULK_SELECTED = {};
+
+function bulkLoadRecords() {
+  const sheet = v('bulk-sheet');
+  _BULK_RECORDS = []; _BULK_FIELDS = []; _BULK_SELECTED = {};
+  document.getElementById('bulk-field').innerHTML = '<option value="">-- pick field --</option>';
+  document.getElementById('bulk-records').innerHTML = '<em>Loading...</em>';
+  document.getElementById('bulk-count').textContent = '';
+  if (!sheet) { document.getElementById('bulk-records').innerHTML = ''; return; }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      _BULK_RECORDS = res.rows || [];
+      _BULK_FIELDS = res.editableFields || [];
+      const fsel = document.getElementById('bulk-field');
+      fsel.innerHTML = '<option value="">-- pick field --</option>';
+      _BULK_FIELDS.forEach(function(f) {
+        const o = document.createElement('option'); o.value = f; o.textContent = f; fsel.appendChild(o);
+      });
+      bulkRenderList();
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('bulk-records').innerHTML = '<span style="color:#900">' + e.message + '</span>';
+    })
+    .bulkEditGetRecords(sheet);
+}
+
+function bulkRenderList() {
+  const filter = (v('bulk-filter') || '').toLowerCase();
+  const box = document.getElementById('bulk-records');
+  const visible = _BULK_RECORDS.filter(function(r) {
+    if (!filter) return true;
+    return (String(r[0]) + ' ' + String(r[1])).toLowerCase().indexOf(filter) >= 0;
+  });
+  const html = visible.map(function(r) {
+    const checked = _BULK_SELECTED[r[0]] ? 'checked' : '';
+    return '<label style="display:block;padding:3px 4px;border-bottom:1px solid #EEE;cursor:pointer;">' +
+      '<input type="checkbox" data-code="' + r[0] + '" ' + checked + ' onchange="bulkToggle(this)"> ' +
+      '<b>' + r[0] + '</b> — ' + (r[1] || '') + '</label>';
+  }).join('');
+  box.innerHTML = html || '<em>No records match.</em>';
+  bulkUpdateCount();
+}
+
+function bulkToggle(el) {
+  const code = el.dataset.code;
+  if (el.checked) _BULK_SELECTED[code] = true; else delete _BULK_SELECTED[code];
+  bulkUpdateCount();
+}
+
+function bulkSelectAll(state) {
+  const filter = (v('bulk-filter') || '').toLowerCase();
+  _BULK_RECORDS.forEach(function(r) {
+    if (!filter || (String(r[0]) + ' ' + String(r[1])).toLowerCase().indexOf(filter) >= 0) {
+      if (state) _BULK_SELECTED[r[0]] = true; else delete _BULK_SELECTED[r[0]];
+    }
+  });
+  bulkRenderList();
+}
+
+function bulkUpdateCount() {
+  const n = Object.keys(_BULK_SELECTED).length;
+  document.getElementById('bulk-count').textContent = n + ' selected · ' + _BULK_RECORDS.length + ' loaded';
+}
+
+function submitBulkEdit() {
+  const sheet = requireField('bulk-sheet', 'Master'); if (!sheet) return;
+  const field = requireField('bulk-field', 'Field'); if (!field) return;
+  const codes = Object.keys(_BULK_SELECTED);
+  if (!codes.length) { showStatus('Select at least one record', true); return; }
+  const val = v('bulk-value');
+  callServer('bulkEditApply', { sheetName: sheet, codes: codes, field: field, value: val }, 'bulk-loading');
+}
+
+// ---- Load Inward form from a PO ----
+function loadFromPoRef() {
+  const raw = document.getElementById('ain-poref').value.trim();
+  if (!raw) { document.getElementById('ain-poref-status').textContent = ''; return; }
+  const poNo = extractCode(raw);
+  document.getElementById('ain-poref-status').textContent = 'Loading ' + poNo + '...';
+  google.script.run
+    .withSuccessHandler(function(r) {
+      if (!r.success) { document.getElementById('ain-poref-status').textContent = 'Error: ' + r.message; return; }
+      // Prefill supplier
+      const supSel = document.getElementById('ain-supplier');
+      for (let i = 0; i < supSel.options.length; i++) {
+        if (extractCode(supSel.options[i].value) === r.supplierCode) { supSel.selectedIndex = i; break; }
+      }
+      // Clear existing line rows
+      const tbody = document.querySelector('#ain-lines tbody');
+      tbody.innerHTML = '';
+      // Add one row per PO line with prefilled values.
+      // Col layout: [0]=Item, [1]=Desc, [2]=L×W (ft), [3]=PCS, [4]=Qty, [5]=Rate, [6]=Disc, [7]=GST
+      // L×W is not prefilled from PO — PO already stored converted (per-sheet)
+      // values, so for a PO→GRN receive the user types Qty + Rate as-is (sheets +
+      // per-sheet). If they want to re-enter L×W to recompute, they can.
+      (r.lines || []).forEach(function(line) {
+        addLine('ain');
+        const rowEls = tbody.lastElementChild.children;
+        const itemSel = rowEls[0].querySelector('select');
+        for (let i = 0; i < itemSel.options.length; i++) {
+          if (extractCode(itemSel.options[i].value) === line.itemCode) { itemSel.selectedIndex = i; itemSel.dispatchEvent(new Event('change')); break; }
+        }
+        const remaining = Math.max(0, line.qty - line.receivedQty);
+        const qtyInput = rowEls[4].querySelector('input');
+        qtyInput.value = remaining || line.qty;
+        qtyInput.dispatchEvent(new Event('input'));  // triggers PCS auto-compute if Sqm/Unit set
+        rowEls[5].querySelector('input').value = line.rate;
+        rowEls[6].querySelector('input').value = line.discount;
+        rowEls[7].querySelector('input').value = line.gst;
+      });
+      document.getElementById('ain-poref-status').textContent = 'Loaded ' + (r.lines || []).length + ' line(s) from ' + poNo +
+        '. Remaining qty pre-filled where partial-received.';
+    })
+    .withFailureHandler(function(e) {
+      document.getElementById('ain-poref-status').textContent = 'Error: ' + e.message;
+    })
+    .getPoDraftForInward(poNo);
+}
+
+
+// ---- FG Delivery Challan ----
+function addFgdMainLine() { _addFgdLine('afgd-main-lines', 'main'); }
+function addFgdHwLine()   { _addFgdLine('afgd-hw-lines',   'hw'); }
+
+function _addFgdLine(tableId, kind) {
+  const tbody = document.querySelector('#' + tableId + ' tbody');
+  const tr = document.createElement('tr');
+  if (kind === 'main') {
+    tr.innerHTML =
+      '<td><select onchange="_onFgdLineLookup(this)"><option value="">-- Manual --</option></select></td>' +
+      '<td><input type="text" placeholder="Description"></td>' +
+      '<td><input type="number" min="0" step="0.01"></td>' +
+      '<td><input type="number" min="0" step="0.01"></td>' +
+      '<td><input type="text"></td>' +
+      '<td><button class="btn-danger btn-small" onclick="removeLine(this)">\u00d7</button></td>';
+    const sel = tr.querySelector('select');
+    // Main items dropdown: FG + SFG codes (both can be delivered)
+    const src = window._IMS || {};
+    (src.fgs || []).concat(src.sfgs || []).forEach(function(v) {
+      const opt = document.createElement('option');
+      opt.value = v.label; opt.textContent = v.label;
+      opt.dataset.code = v.code; opt.dataset.desc = v.desc; opt.dataset.uom = v.uom || '';
+      sel.appendChild(opt);
+    });
+  } else {
+    tr.innerHTML =
+      '<td><select onchange="_onFgdLineLookup(this)"><option value="">-- Manual --</option></select></td>' +
+      '<td><input type="text" placeholder="Description"></td>' +
+      '<td><input type="number" min="0" step="0.01"></td>' +
+      '<td><input type="text"></td>' +
+      '<td><button class="btn-danger btn-small" onclick="removeLine(this)">\u00d7</button></td>';
+    const sel = tr.querySelector('select');
+    ((window._IMS && window._IMS.items) || []).forEach(function(v) {
+      const opt = document.createElement('option');
+      opt.value = v.label; opt.textContent = v.label;
+      opt.dataset.code = v.code; opt.dataset.desc = v.desc; opt.dataset.uom = v.uom || '';
+      sel.appendChild(opt);
+    });
+  }
+  tbody.appendChild(tr);
+}
+
+function _onFgdLineLookup(sel) {
+  const opt = sel.selectedOptions[0];
+  const descInput = sel.closest('tr').querySelectorAll('input[type="text"]')[0];
+  if (opt && opt.dataset.desc) descInput.value = opt.dataset.desc;
+}
+
+function onFgdSameAsBill() {
+  const same = document.getElementById('afgd-samebill').checked;
+  document.getElementById('afgd-shipto').disabled = same;
+  document.getElementById('afgd-shipto-gstin').disabled = same;
+  if (same) {
+    document.getElementById('afgd-shipto').value = document.getElementById('afgd-billto').value;
+    document.getElementById('afgd-shipto-gstin').value = document.getElementById('afgd-billto-gstin').value;
+  }
+}
+
+// Toggle Customer vs Internal Site fields based on type dropdown
+function onFgdTypeChange() {
+  const type = document.getElementById('afgd-type').value;
+  const isInternal = (type === 'Internal');
+  document.querySelectorAll('.afgd-cust-only').forEach(function(el) {
+    el.style.display = isInternal ? 'none' : '';
+  });
+  document.getElementById('afgd-customer-label').textContent = isInternal ? 'Site / Project Name' : 'Customer Name';
+}
+
+function submitFgDelivery() {
+  const date = requireField('afgd-date', 'Date'); if (!date) return;
+  const type = v('afgd-type') || 'Customer';
+  const isInternal = (type === 'Internal');
+  const customerLabel = isInternal ? 'Site / Project Name' : 'Customer Name';
+  const customer = requireField('afgd-customer', customerLabel); if (!customer) return;
+  // Bill To required only for Customer type
+  const billTo = isInternal ? '' : requireField('afgd-billto', 'Bill To Address');
+  if (!isInternal && !billTo) return;
+
+  function collect(tableId, includeWeight) {
+    const rows = document.querySelectorAll('#' + tableId + ' tbody tr');
+    const out = [];
+    rows.forEach(function(r) {
+      const c = r.children;
+      const sel = c[0].querySelector('select');
+      const codeRaw = sel ? sel.value : '';
+      const code = codeRaw ? extractCode(codeRaw) : '';
+      const desc = c[1].querySelector('input').value.trim();
+      const qty  = parseFloat(c[2].querySelector('input').value) || 0;
+      const wt   = includeWeight ? (parseFloat(c[3].querySelector('input').value) || 0) : 0;
+      const remarkCell = includeWeight ? c[4] : c[3];
+      const remark = remarkCell.querySelector('input').value;
+      if (!desc || qty <= 0) return;
+      const opt = sel ? sel.selectedOptions[0] : null;
+      const uom = opt ? (opt.dataset.uom || 'Nos') : 'Nos';
+      out.push({ itemCode: code, description: desc, qty: qty, weight: wt, remark: remark, uom: uom });
+    });
+    return out;
+  }
+
+  const mainItems = collect('afgd-main-lines', true);
+  if (!mainItems.length) { showStatus('Add at least one main item', true); return; }
+  const hardwareItems = collect('afgd-hw-lines', false);
+
+  const sameBill = document.getElementById('afgd-samebill').checked;
+  const payload = {
+    date: date, deliveryType: type,
+    customerName: customer, project: v('afgd-project'),
+    mainItems: mainItems, hardwareItems: hardwareItems,
+    skipPdf: document.getElementById('afgd-skippdf').checked,
+    manualDcNo: v('afgd-manual-dcno'),
+  };
+  // Customer-only commercial fields; omit when Internal to keep register tidy
+  if (!isInternal) {
+    payload.paymentTerms = v('afgd-payment');
+    payload.otherRef = v('afgd-otherref');
+    payload.billTo = v('afgd-billto');
+    payload.billToGstin = v('afgd-billto-gstin');
+    payload.shipTo = sameBill ? v('afgd-billto') : v('afgd-shipto');
+    payload.shipToGstin = sameBill ? v('afgd-billto-gstin') : v('afgd-shipto-gstin');
+    payload.vehicleNo = v('afgd-vehicle');
+    payload.driver = v('afgd-driver');
+    payload.lrNo = v('afgd-lr');
+    payload.eWayBillNo = v('afgd-eway');
+  }
+  callServer('addFgDelivery', payload, 'afgd-loading');
+}
+
+</script>
+</body>
+</html>
