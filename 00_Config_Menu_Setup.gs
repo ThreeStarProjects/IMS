@@ -157,6 +157,8 @@ const DROPDOWN_LISTS = {
     'Grams','Metric Tons','Liters','Milliliters','Bags','Cartons','Drums','Buckets','Cans',
     'Bottles','Pouches','Trays','Pallets','Containers','Loads','Lots','Hours','Days',
     'Services','Jobs','Projects','Kits','Assemblies','Length','Weight','Volume','Area',
+    // Project-Management Hardware List unit names — keep in sync with PM's Unit dropdown.
+    'Sq.ft','Sq.m','Pcs','Box','Roll','Kg','Meter','Set','Other',
   ],
   G: ['Powder Coating','Lamination','Polishing','Upholstery','Plating','Engraving','Other'],
 };
@@ -534,6 +536,33 @@ function _seedDropdowns(ss) {
     if (lastRow >= 2) sh.getRange(2, col, lastRow - 1, 1).clearContent();
     sh.getRange(2, col, values.length, 1).setValues(values.map(function(v) { return [v]; }));
   });
+}
+
+// One-time (run from the editor): make the live workbook offer Project-Management's unit names
+// (Sq.ft, Sq.m, Pcs, Box, Roll, Kg, Meter, Set, Other — also added to DROPDOWN_LISTS.E above so a
+// future Initialize keeps them). Appends only the missing names to Dropdowns col E and re-points the
+// UOM dropdown on Item / SFG / FG Master at the longer list. Does NOT re-seed the other lists
+// (Categories etc.) and never removes a unit. Safe to run more than once.
+const IM_PM_UNITS = ['Sq.ft', 'Sq.m', 'Pcs', 'Box', 'Roll', 'Kg', 'Meter', 'Set', 'Other'];
+
+function IM_applyUnitList() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const dd = ss.getSheetByName('Dropdowns');
+  if (!dd) { toast('Dropdowns sheet not found.'); return; }
+
+  const have = dd.getRange(2, 5, Math.max(dd.getLastRow() - 1, 1), 1).getValues()
+    .map(function(r) { return r[0]; }).filter(String);
+  const add = IM_PM_UNITS.filter(function(u) { return have.indexOf(u) < 0; });
+  if (add.length) dd.getRange(have.length + 2, 5, add.length, 1).setValues(add.map(function(u) { return [u]; }));
+
+  const n = have.length + add.length;
+  const done = [];
+  ['Item Master', 'SFG Master', 'FG Master'].forEach(function(name) {
+    const sh = ss.getSheetByName(name);
+    const col = sh ? _colByHeader(sh, 'UOM') : -1;
+    if (col > 0) { _dv(sh, 2, col, 500, 1, dd.getRange(2, 5, n, 1)); done.push(name); }
+  });
+  toast('Units list: ' + n + ' entries (' + add.length + ' added). UOM dropdown updated on: ' + done.join(', '), '3 Star IMS', 10);
 }
 
 // Locate a column by its header text — future-proof against column inserts.
