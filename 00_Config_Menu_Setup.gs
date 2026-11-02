@@ -226,7 +226,9 @@ function onOpen() {
     .addItem('Undo Last Transaction',     'undoLastTransaction')
     .addItem('Delete Single Register Row','deleteRegisterRow')
     .addSeparator()
-
+    .addItem('Fix Register Codes (by Description)', 'fixRegisterCodes')
+    .addItem('Freeze All Codes',          'freezeAllCodes')
+    .addItem('Unfreeze Code',             'unfreezeCodePrompt')
     .addSeparator()    .addToUi();
 
   // ── 3) Report Generation ────────────────────────────────────────────

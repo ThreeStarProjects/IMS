@@ -959,13 +959,29 @@ function _setExplorerInput(sh, view, ss) {
   const imLabelCol  = (typeof SEARCH_LABEL_COL !== 'undefined' && SEARCH_LABEL_COL['Item Master'])     || 1;
   const supLabelCol = (typeof SEARCH_LABEL_COL !== 'undefined' && SEARCH_LABEL_COL['Supplier Master']) || 1;
   switch (view) {
-    case 'Item Ledger':
-      cLabel.setValue('Item (search):');
-      if (im && im.getLastRow() > 1) {
+    case 'Item Ledger': {
+      cLabel.setValue('Code (search):');
+      // ponytail: Item Ledger now covers RM + SFG + FG. Build a composite in-memory
+      // list of Search Labels — ~500 items is well within requireValueInList limits.
+      // Move to a hidden composite column on Dropdowns if the list ever exceeds that.
+      const sfgSh = ss.getSheetByName('SFG Master');
+      const fgSh  = ss.getSheetByName('FG Master');
+      const sfgLabelCol = (typeof SEARCH_LABEL_COL !== 'undefined' && SEARCH_LABEL_COL['SFG Master']) || 14;
+      const fgLabelCol  = (typeof SEARCH_LABEL_COL !== 'undefined' && SEARCH_LABEL_COL['FG Master'])  || 12;
+      const labels = [];
+      [[im, imLabelCol], [sfgSh, sfgLabelCol], [fgSh, fgLabelCol]].forEach(function(pair) {
+        const sheet = pair[0], col = pair[1];
+        if (!sheet || sheet.getLastRow() < 2 || !col) return;
+        sheet.getRange(2, col, sheet.getLastRow() - 1, 1).getValues().forEach(function(r) {
+          if (r[0]) labels.push(String(r[0]));
+        });
+      });
+      if (labels.length) {
         dInput.setDataValidation(SpreadsheetApp.newDataValidation()
-          .requireValueInRange(im.getRange(2, imLabelCol, im.getLastRow() - 1, 1), true).setAllowInvalid(false).build());
+          .requireValueInList(labels, true).setAllowInvalid(false).build());
       }
       break;
+    }
     case 'Supplier Ledger':
       cLabel.setValue('Supplier (search):');
       if (sup && sup.getLastRow() > 1) {
@@ -1006,69 +1022,121 @@ function _setExplorerInput(sh, view, ss) {
 
 // ----- 6 render fns for Explorer -----
 
-function _renderItemLedger(sh, ss, itemCode) {
-  itemCode = extractCodePrefix(itemCode);
-  if (!itemCode) return;
-  const itemRow = getRowByCode(ss.getSheetByName('Item Master'), itemCode);
-  if (!itemRow) { sh.getRange('A3').setValue('Item not found.').setFontStyle('italic'); return; }
+// Push FG Delivery Main (SFG/FG) out + return events into the shared events[] array.
+// Used by _renderItemLedger when the picked code is an SFG or FG — Main section
+// of a DC drains SFG/FG stock, Returned Qty on the same line puts it back.
+function _addFgDeliveryMainEvents(ss, code, events) {
+  const dcLines = ss.getSheetByName('FG Delivery Lines');
+  const dcReg   = ss.getSheetByName('FG Delivery Register');
+  if (!dcLines || dcLines.getLastRow() < 2) return;
+  const dateByDc = {}, custByDc = {};
+  if (dcReg && dcReg.getLastRow() >= 2) {
+    dcReg.getRange(2, 1, dcReg.getLastRow() - 1, 5).getValues().forEach(function(r) {
+      if (r[1]) { dateByDc[r[1]] = r[2]; custByDc[r[1]] = r[3] || ''; }
+    });
+  }
+  dcLines.getRange(2, 1, dcLines.getLastRow() - 1, 10).getValues().forEach(function(r) {
+    if (r[2] !== 'Main' || r[3] !== code) return;
+    const qtyOut      = Number(r[5]) || 0;
+    const qtyReturned = Number(r[9]) || 0;
+    if (qtyOut > 0) {
+      events.push({ date: dateByDc[r[0]] || '', type: 'FG Delivery (Main)', ref: r[0] || '',
+        party: custByDc[r[0]] || '', qtyIn: 0, qtyOut: qtyOut, reserved: 0, remarks: r[8] || '' });
+    }
+    if (qtyReturned > 0) {
+      events.push({ date: dateByDc[r[0]] || '', type: 'Site Return', ref: r[0] || '',
+        party: custByDc[r[0]] || '', qtyIn: qtyReturned, qtyOut: 0, reserved: 0, remarks: r[8] || '' });
+    }
+  });
+}
 
-  // Gather all movements:
-  //   Inward (In), Requisition (Out), Adjustment (signed In/Out),
-  //   FG Delivery hardware (Out), Reservations (soft lock — doesn't move stock).
+// Item Ledger — accepts any code (RM, SFG, or FG). Dispatches to the right
+// registers by kind. Previous version bailed on anything not in Item Master,
+// which hid every SFG/FG movement from the ledger. UOM/Opening col positions
+// differ per master (RM/SFG UOM=G, FG UOM=H; SFG Opening=L, FG Opening=J).
+function _renderItemLedger(sh, ss, codeInput) {
+  const code = extractCodePrefix(codeInput);
+  if (!code) return;
+  const items = ss.getSheetByName('Item Master');
+  const sfgs  = ss.getSheetByName('SFG Master');
+  const fgs   = ss.getSheetByName('FG Master');
+  let masterRow = getRowByCode(items, code), kind = 'RM';
+  if (!masterRow && sfgs) { masterRow = getRowByCode(sfgs, code); if (masterRow) kind = 'SFG'; }
+  if (!masterRow && fgs)  { masterRow = getRowByCode(fgs,  code); if (masterRow) kind = 'FG';  }
+  if (!masterRow) { sh.getRange('A3').setValue('Code not found in Item / SFG / FG Master.').setFontStyle('italic'); return; }
+
+  const desc = masterRow[2] || '';
+  const uom  = (kind === 'FG' ? masterRow[7] : masterRow[6]) || '';
+
   const events = [];
-  _fetchRegisterRowsCustom(ss, 'Inward Register', 4, itemCode, function(r) {
-    events.push({ date: r[2], type: 'Inward (GRN)', ref: r[1] || '', party: r[6] || '', qtyIn: Number(r[7]) || 0, qtyOut: 0, reserved: 0, remarks: r[16] || '' });
-  });
-  _fetchRegisterRowsCustom(ss, 'Material Requisition Register', 5, itemCode, function(r) {
-    events.push({ date: r[2], type: 'Requisition', ref: r[1] || '', party: r[3] || '', qtyIn: 0, qtyOut: Number(r[6]) || 0, reserved: 0, remarks: r[8] || '' });
-  });
-  _fetchRegisterRowsCustom(ss, 'Adjustments Register', 4, itemCode, function(r) {
+
+  // Opening Qty:
+  //   RM — stored as an 'Opening' row in Adjustments Register (included below).
+  //   SFG — SFG Master col L (idx 11); FG — FG Master col J (idx 9).
+  if (kind === 'SFG') {
+    const o = Number(masterRow[11]) || 0;
+    if (o) events.push({ date: null, type: 'Opening', ref: '', party: '', qtyIn: o, qtyOut: 0, reserved: 0, remarks: 'From SFG Master' });
+  } else if (kind === 'FG') {
+    const o = Number(masterRow[9]) || 0;
+    if (o) events.push({ date: null, type: 'Opening', ref: '', party: '', qtyIn: o, qtyOut: 0, reserved: 0, remarks: 'From FG Master' });
+  }
+
+  // Adjustments + Reservations — same code column (D=4) for every kind.
+  _fetchRegisterRowsCustom(ss, 'Adjustments Register', 4, code, function(r) {
     const q = Number(r[5]) || 0;
     events.push({ date: r[1], type: 'Adjustment', ref: r[2] || '', party: r[7] || '', qtyIn: q > 0 ? q : 0, qtyOut: q < 0 ? -q : 0, reserved: 0, remarks: r[8] || '' });
   });
-  // FG Delivery hardware section — RM outward via a DC. One row per hardware line
-  // in FG Delivery Lines where Section='Hardware'. Date + customer come from the
-  // parent FG Delivery Register row.
-  const dcLines = ss.getSheetByName('FG Delivery Lines');
-  const dcReg   = ss.getSheetByName('FG Delivery Register');
-  if (dcLines && dcLines.getLastRow() >= 2) {
-    const dateByDc = {}, custByDc = {};
-    if (dcReg && dcReg.getLastRow() >= 2) {
-      dcReg.getRange(2, 1, dcReg.getLastRow() - 1, 5).getValues().forEach(function(r) {
-        if (r[1]) { dateByDc[r[1]] = r[2]; custByDc[r[1]] = r[3] || ''; }
-      });
-    }
-    dcLines.getRange(2, 1, dcLines.getLastRow() - 1, 10).getValues().forEach(function(r) {
-      if (r[2] !== 'Hardware' || r[3] !== itemCode) return;
-      const netQty = (Number(r[5]) || 0) - (Number(r[9]) || 0);
-      if (netQty <= 0) return;
-      events.push({ date: dateByDc[r[0]] || '', type: 'FG Delivery (HW)', ref: r[0] || '', party: custByDc[r[0]] || '', qtyIn: 0, qtyOut: netQty, reserved: 0, remarks: r[8] || '' });
-    });
-  }
-  // Reservations — Active rows add to the soft lock; Released/Consumed rows are
-  // informational (the lock is already gone). Status appears in the Type column.
-  _fetchRegisterRowsCustom(ss, 'Reservation Register', 4, itemCode, function(r) {
+  _fetchRegisterRowsCustom(ss, 'Reservation Register', 4, code, function(r) {
     const qty = Number(r[5]) || 0;
     const status = r[8] || 'Active';
     events.push({
-      date: r[2],
-      type: 'Reservation (' + status + ')',
-      ref: r[1] || '',
-      party: r[7] || '',
-      qtyIn: 0, qtyOut: 0,
-      reserved: status === 'Active' ? qty : 0,
-      remarks: r[9] || '',
+      date: r[2], type: 'Reservation (' + status + ')', ref: r[1] || '',
+      party: r[7] || '', qtyIn: 0, qtyOut: 0,
+      reserved: status === 'Active' ? qty : 0, remarks: r[9] || '',
     });
   });
-  // Job Work events — RM may be sent to a Job Worker (Change 2: items→JW).
-  // JW Out cols: A=Sr,B=JWC,C=Date,D=JWCode,E=JWName,F=Process,G=Code,H=Desc,I=Qty
-  _fetchRegisterRowsCustom(ss, 'Job Work Outward Register', 7, itemCode, function(r) {
-    events.push({ date: r[2], type: 'JW Outward', ref: r[1] || '', party: r[4] || '', qtyIn: 0, qtyOut: Number(r[8]) || 0, reserved: 0, remarks: r[11] || '' });
-  });
-  // JW In cols: A=Sr,B=JWGRN,C=Date,D=RefChallan,E=JWName,F=Code,G=Desc,H=QtyRecv
-  _fetchRegisterRowsCustom(ss, 'Job Work Inward Register', 6, itemCode, function(r) {
-    events.push({ date: r[2], type: 'JW Inward', ref: r[1] || '', party: r[4] || '', qtyIn: Number(r[7]) || 0, qtyOut: 0, reserved: 0, remarks: r[11] || '' });
-  });
+
+  if (kind === 'RM') {
+    _fetchRegisterRowsCustom(ss, 'Inward Register', 4, code, function(r) {
+      events.push({ date: r[2], type: 'Inward (GRN)', ref: r[1] || '', party: r[6] || '', qtyIn: Number(r[7]) || 0, qtyOut: 0, reserved: 0, remarks: r[16] || '' });
+    });
+    _fetchRegisterRowsCustom(ss, 'Material Requisition Register', 5, code, function(r) {
+      events.push({ date: r[2], type: 'Requisition', ref: r[1] || '', party: r[3] || '', qtyIn: 0, qtyOut: Number(r[6]) || 0, reserved: 0, remarks: r[8] || '' });
+    });
+    // FG Delivery Hardware section — RM outward via a DC.
+    const dcLines = ss.getSheetByName('FG Delivery Lines');
+    const dcReg   = ss.getSheetByName('FG Delivery Register');
+    if (dcLines && dcLines.getLastRow() >= 2) {
+      const dateByDc = {}, custByDc = {};
+      if (dcReg && dcReg.getLastRow() >= 2) {
+        dcReg.getRange(2, 1, dcReg.getLastRow() - 1, 5).getValues().forEach(function(r) {
+          if (r[1]) { dateByDc[r[1]] = r[2]; custByDc[r[1]] = r[3] || ''; }
+        });
+      }
+      dcLines.getRange(2, 1, dcLines.getLastRow() - 1, 10).getValues().forEach(function(r) {
+        if (r[2] !== 'Hardware' || r[3] !== code) return;
+        const netQty = (Number(r[5]) || 0) - (Number(r[9]) || 0);
+        if (netQty <= 0) return;
+        events.push({ date: dateByDc[r[0]] || '', type: 'FG Delivery (HW)', ref: r[0] || '', party: custByDc[r[0]] || '', qtyIn: 0, qtyOut: netQty, reserved: 0, remarks: r[8] || '' });
+      });
+    }
+  }
+
+  // JW registers hold mixed SFG + RM codes (ponytail: Change 2: items→JW).
+  // FG never goes to a job worker, so skip these for FG.
+  if (kind === 'RM' || kind === 'SFG') {
+    _fetchRegisterRowsCustom(ss, 'Job Work Outward Register', 7, code, function(r) {
+      events.push({ date: r[2], type: 'JW Outward', ref: r[1] || '', party: r[4] || '', qtyIn: 0, qtyOut: Number(r[8]) || 0, reserved: 0, remarks: r[11] || '' });
+    });
+    _fetchRegisterRowsCustom(ss, 'Job Work Inward Register', 6, code, function(r) {
+      events.push({ date: r[2], type: 'JW Inward', ref: r[1] || '', party: r[4] || '', qtyIn: Number(r[7]) || 0, qtyOut: 0, reserved: 0, remarks: r[11] || '' });
+    });
+  }
+
+  // FG Delivery Main — SFG or FG shipped on a DC (and any site returns).
+  if (kind === 'SFG' || kind === 'FG') {
+    _addFgDeliveryMainEvents(ss, code, events);
+  }
 
   events.sort(function(a, b) {
     const ad = (a.date instanceof Date) ? a.date.getTime() : 0;
@@ -1078,16 +1146,20 @@ function _renderItemLedger(sh, ss, itemCode) {
 
   let totalIn = 0, totalOut = 0, netReserved = 0;
   events.forEach(function(e) { totalIn += e.qtyIn; totalOut += e.qtyOut; netReserved += e.reserved; });
-  const balance = totalIn - totalOut;              // physical on-hand
-  const available = balance - netReserved;         // what you can actually commit
-  // Avg Rate — Item Master Avg Rate (Rs.) col (user-set) wins; else derive from Inward history.
-  const _arIdx = (typeof _avgRateCol === 'function') ? _avgRateCol(ss.getSheetByName('Item Master')) - 1 : 20;
-  const avgRateFromMaster = (_arIdx >= 0) ? (Number(itemRow[_arIdx]) || 0) : 0;
-  const avgRate = avgRateFromMaster > 0 ? avgRateFromMaster : Number((_avgRateMap(ss) || {})[itemCode] || 0);
+  const balance = totalIn - totalOut;
+  const available = balance - netReserved;
 
-  // Summary strip (row 2) — 6 KPI chips: Item | IN | OUT | Bal | Rsvd | Avg Rate | Available
+  // Avg Rate — RM only (Item Master has Avg Rate col; SFG/FG don't).
+  let avgRate = 0;
+  if (kind === 'RM') {
+    const _arIdx = (typeof _avgRateCol === 'function') ? _avgRateCol(items) - 1 : 20;
+    const avgRateFromMaster = (_arIdx >= 0) ? (Number(masterRow[_arIdx]) || 0) : 0;
+    avgRate = avgRateFromMaster > 0 ? avgRateFromMaster : Number((_avgRateMap(ss) || {})[code] || 0);
+  }
+
+  // Summary strip
   sh.getRange('A2:J2').clearContent().clearFormat();
-  sh.getRange('A2:B2').merge().setValue('  ' + itemCode + '  ›  ' + (itemRow[2] || ''))
+  sh.getRange('A2:B2').merge().setValue('  ' + code + ' [' + kind + ']  ›  ' + desc)
     .setBackground('#1F4E79').setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(11);
   sh.getRange('C2').setValue('IN: ' + _fmtIndian(totalIn))
     .setBackground('#D5F5E3').setFontColor('#1E8449').setFontWeight('bold').setHorizontalAlignment('center');
@@ -1098,8 +1170,7 @@ function _renderItemLedger(sh, ss, itemCode) {
     .setHorizontalAlignment('center');
   sh.getRange('F2').setValue('RSVD: ' + _fmtIndian(netReserved))
     .setBackground('#D6EAF8').setFontColor('#1F4E79').setFontWeight('bold').setHorizontalAlignment('center');
-  // Unit label at G1 (above the ₹/u chip) so you can tell meter vs no.s vs kg.
-  const uomLbl = (itemRow[6] || '').toString().trim();
+  const uomLbl = (uom || '').toString().trim();
   sh.getRange('G1').setValue(uomLbl ? ('Unit: ' + uomLbl) : '')
     .setBackground('#FDEBD0').setFontColor('#8E6600').setFontWeight('bold')
     .setFontSize(10).setHorizontalAlignment('center');
@@ -1110,13 +1181,13 @@ function _renderItemLedger(sh, ss, itemCode) {
     .setHorizontalAlignment('center').setFontSize(11);
   sh.setRowHeight(2, 30);
 
-  // Unified chronological ledger — now 10 cols with Reserved + Balance side by side.
+  // Unified chronological ledger — 10 cols with Reserved + Balance side by side.
   const headers = ['Sr','Date','Type','Ref No','Party / Purpose','Qty IN','Qty OUT','Reserved','Balance','Remarks'];
   sh.getRange(3, 1, 1, headers.length).setValues([headers]);
 
   let runningBal = 0;
   const rows = events.map(function(e, i) {
-    runningBal += e.qtyIn - e.qtyOut;  // Balance tracks physical only
+    runningBal += e.qtyIn - e.qtyOut;
     return [i + 1, e.date, e.type, e.ref, e.party, e.qtyIn || '', e.qtyOut || '', e.reserved || '', runningBal, e.remarks];
   });
   if (rows.length) sh.getRange(4, 1, rows.length, headers.length).setValues(rows);
@@ -1125,9 +1196,8 @@ function _renderItemLedger(sh, ss, itemCode) {
     dateCols: [2], centerCols: [1, 3], qtyCols: [6, 7, 8, 9], boldCols: [9] });
 
   if (rows.length) {
-    sh.getRange(4, 9, rows.length, 1).setBackground('#EBF3FB');  // Balance col tint
-    sh.getRange(4, 8, rows.length, 1).setBackground('#F4F8FB');  // Reserved col tint
-    // Highlight reservation rows with a soft blue banding override
+    sh.getRange(4, 9, rows.length, 1).setBackground('#EBF3FB');
+    sh.getRange(4, 8, rows.length, 1).setBackground('#F4F8FB');
     for (let i = 0; i < rows.length; i++) {
       if (String(rows[i][2]).indexOf('Reservation') === 0) {
         sh.getRange(4 + i, 1, 1, headers.length).setBackground('#F4F8FB').setFontStyle('italic');

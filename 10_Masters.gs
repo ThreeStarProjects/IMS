@@ -118,6 +118,10 @@ function lookupComponentUom(componentType, componentCode) {
 function onEdit(e) {
   if (!e || !e.range) return;
   try {
+    // Code-lock guard — defined in 90_CodeHygiene.gs. Reverts manual edits to
+    // col A on masters with "Code Locked?" = TRUE. Short-circuits the router.
+    if (typeof _codeLockGuard === 'function' && _codeLockGuard(e)) return;
+
     const sh = e.range.getSheet();
     const name = sh.getName();
     const row = e.range.getRow();
