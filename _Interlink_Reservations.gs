@@ -33,17 +33,23 @@ function IM_installReservationQueue() {
   });
   ScriptApp.newTrigger('IM_processReservationRequests').timeBased().everyMinutes(1).create();
 
-  var msg = '"' + IM_RSV_QUEUE + '" sheet ready; requests are processed every minute.';
+  // Process anything already waiting, so this one run also clears a stuck request.
+  var res = IM_processReservationRequests();
+  var msg = '"' + IM_RSV_QUEUE + '" ready; trigger recreated (every minute). ' +
+            'Processed now: ' + res.done + ' reserved, ' + res.failed + ' failed.' +
+            (res.failed ? ' See the Message column on the queue sheet.' : '');
   try { SpreadsheetApp.getUi().alert('Reservation queue', msg, SpreadsheetApp.getUi().ButtonSet.OK); }
   catch (e) { Logger.log(msg); }  // run from editor: no UI context
 }
 
+/** Process every Pending request. Returns { done, failed } counts. */
 function IM_processReservationRequests() {
+  var out = { done: 0, failed: 0 };
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) return;  // a previous run is still going
+  if (!lock.tryLock(5000)) { Logger.log('queue: previous run still going'); return out; }
   try {
     var sh = SpreadsheetApp.getActive().getSheetByName(IM_RSV_QUEUE);
-    if (!sh || sh.getLastRow() < 2) return;
+    if (!sh || sh.getLastRow() < 2) return out;
     var rows = sh.getRange(2, 1, sh.getLastRow() - 1, IM_RSV_HEADERS.length).getValues();
 
     rows.forEach(function (r, i) {
@@ -63,6 +69,9 @@ function IM_processReservationRequests() {
       sh.getRange(i + 2, 8, 1, 4).setValues([[
         res.success ? 'Done' : 'Error', res.success ? res.code : '', new Date(), res.message || ''
       ]]);
+      if (res.success) out.done++; else out.failed++;
     });
+    if (out.done || out.failed) Logger.log('queue: ' + out.done + ' reserved, ' + out.failed + ' failed');
+    return out;
   } finally { lock.releaseLock(); }
 }
