@@ -78,18 +78,35 @@ function IM_processReservationRequests() {
     if (sh.getLastRow() < 2) return out;
     var rows = sh.getRange(2, 1, sh.getLastRow() - 1, IM_RSV_HEADERS.length).getValues();
 
+    // No duplicates: an Active reservation for the same item + reference already counts as
+    // done. Keyed "code|forRef" → Reservation No; updated as this run adds more.
+    var active = {};
+    var reg = SpreadsheetApp.getActive().getSheetByName('Reservation Register');
+    if (reg && reg.getLastRow() >= 2) {
+      reg.getRange(2, 1, reg.getLastRow() - 1, 9).getValues().forEach(function (x) {
+        if (x[8] === 'Active') active[x[3] + '|' + x[7]] = x[1];  // D code, H For (Reference), I Status, B Res No
+      });
+    }
+
     rows.forEach(function (r, i) {
       if (r[7] !== 'Pending') return;
+      var code = extractCodePrefix(r[4]);
+      var forRef = String(r[3]) + (r[6] ? ' / ' + r[6] : '');
       var res;
-      try {
-        res = addReservation({
-          date:   new Date(),
-          code:   extractCodePrefix(r[4]),
-          qty:    r[5],
-          forRef: String(r[3]) + (r[6] ? ' / ' + r[6] : ''),
-          notes:  'Requested from PM by ' + r[2]
-        });
-      } catch (e) { res = { success: false, message: e.message }; }
+      if (active[code + '|' + forRef]) {
+        res = { success: true, code: active[code + '|' + forRef], message: 'Already reserved — no duplicate created' };
+      } else {
+        try {
+          res = addReservation({
+            date:   new Date(),
+            code:   code,
+            qty:    r[5],
+            forRef: forRef,
+            notes:  'Requested from PM by ' + r[2]
+          });
+          if (res.success) active[code + '|' + forRef] = res.code;
+        } catch (e) { res = { success: false, message: e.message }; }
+      }
 
       // H Status, I Reservation No, J Processed At, K Message
       sh.getRange(i + 2, 8, 1, 4).setValues([[
