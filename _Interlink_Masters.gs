@@ -125,8 +125,12 @@ function IM_onOpen_() {
     .addItem('Refresh dropdowns from Masters', 'IM_refreshDropdowns')
     .addItem('Clear Masters cache',            'IM_clearCache')
     .addSeparator()
+    .addItem('Process PM reservation requests now', 'IM_processReservationRequestsNow')
+    .addSeparator()
     .addItem('About',                          'IM_about_')
     .addToUi();
+  // Self-heal the PM reservation queue: recreate its trigger if missing, and drain anything waiting.
+  try { IM_ensureQueueTrigger_(); IM_processReservationRequests(); } catch (e) {}
 }
 
 function IM_about_() {

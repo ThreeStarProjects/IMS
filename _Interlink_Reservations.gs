@@ -32,6 +32,8 @@ function IM_installReservationQueue() {
     if (t.getHandlerFunction() === 'IM_processReservationRequests') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('IM_processReservationRequests').timeBased().everyMinutes(1).create();
+  sh.getRange('M1').setValue('Heartbeat: waiting for first run');
+  sh.setColumnWidth(13, 320);
 
   // Process anything already waiting, so this one run also clears a stuck request.
   var res = IM_processReservationRequests();
@@ -42,6 +44,23 @@ function IM_installReservationQueue() {
   catch (e) { Logger.log(msg); }  // run from editor: no UI context
 }
 
+/** Recreate the 1-minute trigger if it has gone missing. Called when IMS opens. */
+function IM_ensureQueueTrigger_() {
+  var has = ScriptApp.getProjectTriggers().some(function (t) {
+    return t.getHandlerFunction() === 'IM_processReservationRequests';
+  });
+  if (!has && SpreadsheetApp.getActive().getSheetByName(IM_RSV_QUEUE)) {
+    ScriptApp.newTrigger('IM_processReservationRequests').timeBased().everyMinutes(1).create();
+    Logger.log('queue trigger was missing; recreated');
+  }
+}
+
+/** Menu action: process waiting PM requests right now. */
+function IM_processReservationRequestsNow() {
+  var r = IM_processReservationRequests();
+  SpreadsheetApp.getActive().toast(r.done + ' reserved, ' + r.failed + ' failed', 'PM reservation requests', 6);
+}
+
 /** Process every Pending request. Returns { done, failed } counts. */
 function IM_processReservationRequests() {
   var out = { done: 0, failed: 0 };
@@ -49,7 +68,14 @@ function IM_processReservationRequests() {
   if (!lock.tryLock(5000)) { Logger.log('queue: previous run still going'); return out; }
   try {
     var sh = SpreadsheetApp.getActive().getSheetByName(IM_RSV_QUEUE);
-    if (!sh || sh.getLastRow() < 2) return out;
+    if (!sh) return out;
+    // Heartbeat (M1): if this timestamp is stale, the time trigger is not running.
+    var n = ScriptApp.getProjectTriggers().filter(function (t) {
+      return t.getHandlerFunction() === 'IM_processReservationRequests';
+    }).length;
+    sh.getRange('M1').setValue('Heartbeat: last run ' +
+      Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM HH:mm:ss') + ' · triggers: ' + n);
+    if (sh.getLastRow() < 2) return out;
     var rows = sh.getRange(2, 1, sh.getLastRow() - 1, IM_RSV_HEADERS.length).getValues();
 
     rows.forEach(function (r, i) {
