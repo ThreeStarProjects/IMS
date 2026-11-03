@@ -282,6 +282,9 @@ function postRequisitionRows(formData) {
 
     reg.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
 
+    // A requisition is the outward event: consume matching Active PM reservations (never throws).
+    IM_consumePmReservations_(formData.project, formData.lineItems, reqNo);
+
     updateItemSnapshotsBatch(touched);
 
     const pdfLines = rows.map(function(r) {

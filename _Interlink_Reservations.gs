@@ -55,6 +55,54 @@ function IM_ensureQueueTrigger_() {
   }
 }
 
+/**
+ * Called by postRequisitionRows (20_Registers.gs) right after the requisition rows are written.
+ * A Material Requisition is the outward event, so it consumes the matching Active PM reservations
+ * instead of someone marking them Consumed by hand. A reservation matches when:
+ *   - it was made from PM: For (Reference) = "<project> / HW-nnn",
+ *   - its project matches the requisition's by PRJ-### id (or by exact name when there is no id),
+ *   - the item code matches, and
+ *   - the issued qty of that item in this requisition covers the WHOLE reservation (oldest first).
+ * A smaller issue leaves the reservation Active (it would otherwise free stock that is still
+ * reserved). Runs before the snapshot refresh in postRequisitionRows, so one refresh covers both.
+ * Never throws: a requisition must always post. Returns how many reservations it consumed.
+ */
+function IM_consumePmReservations_(project, lines, reqNo) {
+  try {
+    var reg = SpreadsheetApp.getActive().getSheetByName('Reservation Register');
+    if (!reg || reg.getLastRow() < 2 || !project) return 0;
+    var key = IM_projKey_(project);
+    var issued = {};  // item code → qty issued in this requisition
+    lines.forEach(function (l) { issued[l.itemCode] = (issued[l.itemCode] || 0) + Number(l.qty); });
+
+    var data = reg.getRange(2, 1, reg.getLastRow() - 1, 14).getValues();
+    var user = currentUserEmail(), now = new Date(), done = 0;
+    var PM_REF = / \/ HW-\d+$/;
+    data.forEach(function (r, i) {  // Register rows are in reservation-number order, so oldest first
+      var code = r[3], ref = String(r[7]), qty = Number(r[5]);
+      if (r[8] !== 'Active' || !PM_REF.test(ref) || !(qty > 0) || !(issued[code] >= qty)) return;
+      if (IM_projKey_(ref.replace(PM_REF, '')) !== key) return;
+      issued[code] -= qty;
+      var row = i + 2;
+      reg.getRange(row, 9).setValue('Consumed');   // I Status
+      reg.getRange(row, 13).setValue(now);         // M Released/Consumed At
+      reg.getRange(row, 14).setValue(user);        // N Released By
+      reg.getRange(row, 10).setValue((r[9] ? r[9] + ' | ' : '') + 'Auto-consumed by ' + reqNo);  // J Notes
+      done++;
+    });
+    return done;
+  } catch (e) {
+    Logger.log('IM_consumePmReservations_: ' + e.message);
+    return 0;
+  }
+}
+
+/** Project comparison key: the PRJ-### id when there is one, else the trimmed lower-case name. */
+function IM_projKey_(s) {
+  var m = /PRJ-\d+/i.exec(String(s));
+  return m ? m[0].toUpperCase() : String(s).trim().toLowerCase();
+}
+
 /** Menu action: process waiting PM requests right now. */
 function IM_processReservationRequestsNow() {
   var r = IM_processReservationRequests();
