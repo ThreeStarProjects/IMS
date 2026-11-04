@@ -131,6 +131,7 @@ function IM_onOpen_() {
     .addToUi();
   // Self-heal the PM reservation queue: recreate its trigger if missing, and drain anything waiting.
   try { IM_ensureQueueTrigger_(); IM_processReservationRequests(); } catch (e) {}
+  IM_refreshDropdowns(true);  // keep PRJ-### project suggestions current (never throws when quiet)
 }
 
 function IM_about_() {
@@ -147,15 +148,28 @@ function IM_about_() {
 }
 
 // -----------------------------------------------------------------------------
-// Dropdown refresher — stub for v0.4 Phase 1. Each system will fill in its
-// own IM_refreshDropdowns() in a sibling _Interlink_Dropdowns.gs file that
-// knows which sheets+columns to re-validate.
+// Dropdown refresher (v0.4 Phase 1b, IMS). Appends the active Masters project labels
+// ("PRJ-001 — Test") to the Projects list on the Dropdowns sheet (col K), which feeds the
+// project suggestions on the requisition and reservation forms. Without it nobody picks a
+// PRJ-### when issuing material, and the PM reservation / Finance cost links cannot match.
+// Only adds labels that are missing: names already in the list (plain names typed by hand)
+// stay untouched. Runs when IMS opens (quiet) and from 🔗 Interlink → Refresh dropdowns.
 // -----------------------------------------------------------------------------
-function IM_refreshDropdowns() {
-  SpreadsheetApp.getUi().alert(
-    'Dropdowns not wired yet',
-    'This system doesn\'t have per-sheet dropdown rules configured yet. ' +
-    'That lives in _Interlink_Dropdowns.gs (next step).',
-    SpreadsheetApp.getUi().ButtonSet.OK
-  );
+function IM_refreshDropdowns(quiet) {
+  try {
+    var ss = SpreadsheetApp.getActive();
+    var dd = ss.getSheetByName('Dropdowns');
+    if (!dd) return;
+    if (!quiet) CacheService.getScriptCache().remove(IM_CACHE_KEY + 'projects');  // manual refresh: skip the 5-min cache
+
+    var col = dd.getLastRow() >= 2 ? dd.getRange(2, 11, dd.getLastRow() - 1, 1).getValues() : [];
+    var have = {}, last = 0;  // last = number of rows down to the final non-empty cell
+    col.forEach(function (r, i) { if (r[0] !== '') { have[String(r[0])] = true; last = i + 1; } });
+    var add = IM_projectLabels().filter(function (l) { return !have[l]; });
+    if (add.length) dd.getRange(last + 2, 11, add.length, 1).setValues(add.map(function (l) { return [l]; }));
+
+    if (!quiet) ss.toast(add.length ? 'Added ' + add.length + ' project(s) from Masters.' : 'Projects already up to date.', '🔗 Interlink', 5);
+  } catch (e) {
+    if (!quiet) SpreadsheetApp.getUi().alert('Could not refresh projects from Masters', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
 }
