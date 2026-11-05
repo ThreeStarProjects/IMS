@@ -1216,8 +1216,9 @@ function _buildDescMap(ss) {
 
 // ============================================================================
 // RESERVATION — soft-lock stock for a specific order/customer/project.
-// Snapshot's Available = physical on-hand − sum(Active reservations).
-// Release is manual only — user picks a reservation and marks it Released or Consumed.
+// Snapshot's Available = physical on-hand − sum(open reservations: Active + Partially Consumed, net of Consumed Qty).
+// Release/consume is manual (this form) or automatic for PM reservations (a Material Requisition, see
+// _Interlink_Reservations.gs). Consumed can be partial: the rest stays reserved until consumed or released.
 // ============================================================================
 
 function addReservation(d) {
@@ -1274,19 +1275,22 @@ function getActiveReservations() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const reg = ss.getSheetByName('Reservation Register');
   if (!reg || reg.getLastRow() < 2) return [];
-  const data = reg.getRange(2, 1, reg.getLastRow() - 1, 14).getValues();
+  const data = reg.getRange(2, 1, reg.getLastRow() - 1, 15).getValues();
   const out = [];
   data.forEach(function(r) {
-    if (r[8] !== 'Active') return;
+    if (!IM_isOpenRsv_(r[8])) return;
+    const left = Math.round(((Number(r[5]) || 0) - (Number(r[14]) || 0)) * 1000) / 1000;  // still held
     out.push({
-      resNo: r[1], code: r[3], desc: r[4], qty: r[5], uom: r[6], forRef: r[7],
-      label: r[1] + '  |  ' + r[3] + ' × ' + r[5] + ' ' + (r[6] || '') + '  |  ' + r[7],
+      resNo: r[1], code: r[3], desc: r[4], qty: left, uom: r[6], forRef: r[7],
+      label: r[1] + '  |  ' + r[3] + ' × ' + left + ' ' + (r[6] || '') + (left < r[5] ? ' left of ' + r[5] : '') + '  |  ' + r[7],
     });
   });
   return out.sort(function(a, b) { return a.resNo < b.resNo ? 1 : -1; });
 }
 
 // Mark reservation as Released or Consumed. Refreshes snapshot for the code.
+// Consumed takes an optional d.qty: less than what is still held leaves it "Partially Consumed".
+// Released frees whatever is still held.
 function releaseReservation(d) {
   try {
     _require(d, ['resNo', 'status']);
@@ -1297,16 +1301,23 @@ function releaseReservation(d) {
     const rows = getRowsByValue(reg, 2, d.resNo);
     if (!rows.length) throw new Error('Reservation not found: ' + d.resNo);
     const rowNum = rows[0];
-    const currentStatus = reg.getRange(rowNum, 9).getValue();
-    if (currentStatus !== 'Active') throw new Error('Reservation ' + d.resNo + ' is already ' + currentStatus);
-    const code = reg.getRange(rowNum, 4).getValue();
+    const vals = reg.getRange(rowNum, 1, 1, 15).getValues()[0];
+    const currentStatus = vals[8];
+    if (!IM_isOpenRsv_(currentStatus)) throw new Error('Reservation ' + d.resNo + ' is already ' + currentStatus);
+    const code = vals[3];
+    const left = Math.round(((Number(vals[5]) || 0) - (Number(vals[14]) || 0)) * 1000) / 1000;
 
-    reg.getRange(rowNum, 9).setValue(d.status);       // I Status
-    reg.getRange(rowNum, 13).setValue(new Date());    // M Released/Consumed At
-    reg.getRange(rowNum, 14).setValue(currentUserEmail());  // N Released By
-    if (d.notes) {
-      const existing = reg.getRange(rowNum, 10).getValue() || '';
-      reg.getRange(rowNum, 10).setValue((existing ? existing + ' | ' : '') + d.notes);
+    let msg = 'Reservation ' + d.resNo + ' marked ' + d.status;
+    if (d.status === 'Consumed') {
+      const q = (d.qty === undefined || d.qty === '' || d.qty === null) ? left : Number(d.qty);
+      if (!(q > 0) || q > left + 0.0005) throw new Error('Consumed qty must be between 0 and ' + left + ' (still held).');
+      const st = IM_consumeRsvRow_(reg, rowNum, vals, q, d.notes);
+      msg = 'Reservation ' + d.resNo + ': consumed ' + q + (st === 'Consumed' ? ' (fully consumed)' : ', ' + (Math.round((left - q) * 1000) / 1000) + ' still reserved');
+    } else {
+      reg.getRange(rowNum, 9).setValue(d.status);       // I Status
+      reg.getRange(rowNum, 13).setValue(new Date());    // M Released/Consumed At
+      reg.getRange(rowNum, 14).setValue(currentUserEmail());  // N Released By
+      if (d.notes) reg.getRange(rowNum, 10).setValue((vals[9] ? vals[9] + ' | ' : '') + d.notes);
     }
 
     // Refresh snapshot — determine kind via master lookup
@@ -1315,7 +1326,7 @@ function releaseReservation(d) {
     if (items && getRowByCode(items, code)) updateItemSnapshotsBatch([code]);
     if (sfgs && getRowByCode(sfgs, code))   updateSfgSnapshotsBatch([code]);
 
-    return { success: true, message: 'Reservation ' + d.resNo + ' marked ' + d.status };
+    return { success: true, message: msg };
   } catch (e) {
     return { success: false, message: e.message };
   }

@@ -140,17 +140,17 @@ function _readAllSfgAggregates(ss, shared) {
 }
 
 // Sum ACTIVE reservations by code. Returns { code: totalReservedQty }.
-// Only Status='Active' counts — Released and Consumed are ignored.
+// Active and Partially Consumed count (the latter for Qty − Consumed Qty); Requested, Released, Consumed, Error don't.
 function _aggregateReservations(ss) {
   const sh = ss.getSheetByName('Reservation Register');
   const out = {};
   if (!sh || sh.getLastRow() < 2) return out;
-  // Cols: A=Sr, B=ResNo, C=Date, D=Code, E=Desc, F=Qty, G=UOM, H=For, I=Status
-  const data = sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues();
+  // Cols: A=Sr, B=ResNo, C=Date, D=Code, E=Desc, F=Qty, G=UOM, H=For, I=Status, O=Consumed Qty
+  const data = sh.getRange(2, 1, sh.getLastRow() - 1, 15).getValues();
   data.forEach(function(r) {
     if (!r[3]) return;
-    if (r[8] !== 'Active') return;
-    const qty = Number(r[5]) || 0;
+    if (!IM_isOpenRsv_(r[8])) return;
+    const qty = (Number(r[5]) || 0) - (Number(r[14]) || 0);
     if (qty <= 0) return;
     out[r[3]] = (out[r[3]] || 0) + qty;
   });
@@ -688,14 +688,14 @@ function _dashOperationsData(ss) {
   // Reservations
   const resSh = ss.getSheetByName('Reservation Register');
   if (resSh && resSh.getLastRow() >= 2) {
-    const rd = resSh.getRange(2, 1, resSh.getLastRow() - 1, 9).getValues();
+    const rd = resSh.getRange(2, 1, resSh.getLastRow() - 1, 15).getValues();
     const rmCosts = _itemCostMap(ss, rmDataShared);
     const seenRes = {};
     rd.forEach(function(r) {
-      if (r[8] !== 'Active') return;
+      if (!IM_isOpenRsv_(r[8])) return;
       if (!r[3]) return;
       seenRes[r[1]] = true;  // count distinct reservation numbers
-      out.reservedValue += (Number(r[5]) || 0) * (rmCosts[r[3]] || 0);
+      out.reservedValue += ((Number(r[5]) || 0) - (Number(r[14]) || 0)) * (rmCosts[r[3]] || 0);
     });
     out.activeReservations = Object.keys(seenRes).length;
   }
@@ -1092,7 +1092,7 @@ function _renderItemLedger(sh, ss, codeInput) {
     events.push({
       date: r[2], type: 'Reservation (' + status + ')', ref: r[1] || '',
       party: r[7] || '', qtyIn: 0, qtyOut: 0,
-      reserved: status === 'Active' ? qty : 0, remarks: r[9] || '',
+      reserved: IM_isOpenRsv_(status) ? qty - (Number(r[14]) || 0) : 0, remarks: r[9] || '',
     });
   });
 

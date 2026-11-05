@@ -295,17 +295,27 @@ function _cfReservations(ss) {
     SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied('=$I2="Active"')
       .setBackground('#D6EAF8')
-      .setRanges([sh.getRange('A2:N' + maxRow)]).build(),
+      .setRanges([sh.getRange('A2:P' + maxRow)]).build(),
+    // Requested (PM asked, waiting for IMS) / Partially Consumed → amber
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=OR($I2="Requested",$I2="Partially Consumed")')
+      .setBackground('#FCF3CF')
+      .setRanges([sh.getRange('A2:P' + maxRow)]).build(),
+    // Error → red
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=$I2="Error"')
+      .setBackground('#FADBD8')
+      .setRanges([sh.getRange('A2:P' + maxRow)]).build(),
     // Released → grey
     SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied('=$I2="Released"')
       .setBackground('#EAEDED').setFontColor('#7F8C8D')
-      .setRanges([sh.getRange('A2:N' + maxRow)]).build(),
+      .setRanges([sh.getRange('A2:P' + maxRow)]).build(),
     // Consumed → light green
     SpreadsheetApp.newConditionalFormatRule()
       .whenFormulaSatisfied('=$I2="Consumed"')
       .setBackground('#D5F5E3')
-      .setRanges([sh.getRange('A2:N' + maxRow)]).build(),
+      .setRanges([sh.getRange('A2:P' + maxRow)]).build(),
   ];
   sh.setConditionalFormatRules(rules);
 }

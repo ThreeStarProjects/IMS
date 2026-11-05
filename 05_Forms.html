@@ -814,7 +814,7 @@
 
   <!-- MODE: RELEASE -->
   <div id="res-release-block" style="display:none;">
-    <p class="hint">Pick an active reservation. Mark it <b>Released</b> (freed back to available stock) or <b>Consumed</b> (fulfilled by an outward transaction).</p>
+    <p class="hint">Pick an active reservation. Mark it <b>Released</b> (freed back to available stock) or <b>Consumed</b> (fulfilled by an outward transaction). For a part-consumption enter the qty used; the rest stays reserved.</p>
     <div class="grid2">
       <div class="fg" style="grid-column: 1/-1"><label class="req">Active Reservation</label>
         <select id="rres-picker" onchange="onReleaseResPickerChange()"><option value="">-- pick reservation --</option></select>
@@ -829,7 +829,7 @@
           <option>Consumed</option>
         </select>
       </div>
-      <div class="fg"></div>
+      <div class="fg"><label>Qty consumed (blank = all that is left)</label><input id="rres-cqty" type="number" step="any" min="0"></div>
       <div class="fg" style="grid-column: 1/-1"><label>Notes (optional)</label><input id="rres-notes" type="text" placeholder="e.g., Order cancelled / DC-0042 issued"></div>
     </div>
   </div>
@@ -2966,6 +2966,7 @@ function submitReleaseReservation() {
   const status = requireField('rres-status', 'Status'); if (!status) return;
   callServer('releaseReservation', {
     resNo: resNo, status: status, notes: v('rres-notes'),
+    qty: status === 'Consumed' ? v('rres-cqty') : '',
   }, 'rres-loading');
 }
 

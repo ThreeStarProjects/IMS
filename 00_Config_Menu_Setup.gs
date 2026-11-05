@@ -35,9 +35,10 @@ const SHEET_SPECS = [
   { name: 'FG Delivery Lines', headers: ['DC No','Line No','Section','Item Code','Description','Qty','UOM','Weight (KG)','Remark','Returned Qty'] },
   { name: 'Adjustments Register', headers: ['Sr No','Date','Type','Item/SFG Code','Description','Qty Adjustment','UOM','Reason / Details','Remarks','Created By','Created At'] },
   // Reservation Register — soft-locks stock for a specific customer/project/order.
-  // Status: Active | Released (freed back) | Consumed (fulfilled by outward).
-  // Manual release only — user updates Status via Release Reservation form.
-  { name: 'Reservation Register', headers: ['Sr No','Reservation No','Date','Item/SFG Code','Description','Qty Reserved','UOM','For (Reference)','Status','Notes','Created By','Created At','Released/Consumed At','Released By'] },
+  // Status: Requested (PM asked, not yet processed) | Active | Partially Consumed | Consumed (fulfilled by outward)
+  //         | Released (freed back) | Error. Active and Partially Consumed hold stock (Qty Reserved − Consumed Qty).
+  // Manual release/consume via the Release Reservation form; a Material Requisition consumes PM reservations itself.
+  { name: 'Reservation Register', headers: ['Sr No','Reservation No','Date','Item/SFG Code','Description','Qty Reserved','UOM','For (Reference)','Status','Notes','Created By','Created At','Released/Consumed At','Released By','Consumed Qty','Request ID'] },
   // QC Register — 35 cols. Source/Ref/Line/Outcome at front for easy scanning;
   // then Basic Details, Quantity Check, Visual Inspection, Specification Check,
   // Functional/Performance, Document, Created At.
@@ -672,7 +673,7 @@ function _applyMasterValidations(ss) {
   if (res) {
     _wipeMasterValidations(res);
     const stCol = _colByHeader(res, 'Status');
-    if (stCol > 0) _dvList(res, 2, stCol, bigRange, 1, ['Active','Released','Consumed']);
+    if (stCol > 0) _dvList(res, 2, stCol, bigRange, 1, ['Requested','Active','Partially Consumed','Consumed','Released','Error']);
   }
   // ---- QC Register: dropdowns for Source Type, Outcome, and all Status/inspection cols ----
   const qc = ss.getSheetByName('QC Register');
@@ -821,8 +822,8 @@ const ON_HAND_FORMULAS = {
   'FG Master': {
     col: 11,  // K (Available) — subtracts active reservations
     // Available = Opening + Adjustments − FG Delivery Main + Returned − Active Reservations
-    // Reservation Register: D=Code, F=Qty, I=Status (Active only)
-    formula: "=ARRAYFORMULA(IF(A2:A=\"\",\"\",IF(J2:J=\"\",0,J2:J)+IFERROR(SUMIF('Adjustments Register'!D:D,A2:A,'Adjustments Register'!F:F),0)-IFERROR(SUMIFS('FG Delivery Lines'!F:F,'FG Delivery Lines'!D:D,A2:A,'FG Delivery Lines'!C:C,\"Main\"),0)+IFERROR(SUMIFS('FG Delivery Lines'!J:J,'FG Delivery Lines'!D:D,A2:A,'FG Delivery Lines'!C:C,\"Main\"),0)-IFERROR(SUMIFS('Reservation Register'!F:F,'Reservation Register'!D:D,A2:A,'Reservation Register'!I:I,\"Active\"),0)))"
+    // Reservation Register: D=Code, F=Qty, I=Status, O=Consumed Qty (Active + Partially Consumed hold stock)
+    formula: "=ARRAYFORMULA(IF(A2:A=\"\",\"\",IF(J2:J=\"\",0,J2:J)+IFERROR(SUMIF('Adjustments Register'!D:D,A2:A,'Adjustments Register'!F:F),0)-IFERROR(SUMIFS('FG Delivery Lines'!F:F,'FG Delivery Lines'!D:D,A2:A,'FG Delivery Lines'!C:C,\"Main\"),0)+IFERROR(SUMIFS('FG Delivery Lines'!J:J,'FG Delivery Lines'!D:D,A2:A,'FG Delivery Lines'!C:C,\"Main\"),0)-IFERROR(SUMIFS('Reservation Register'!F:F,'Reservation Register'!D:D,A2:A,'Reservation Register'!I:I,\"Active\")+SUMIFS('Reservation Register'!F:F,'Reservation Register'!D:D,A2:A,'Reservation Register'!I:I,\"Partially Consumed\")-SUMIFS('Reservation Register'!O:O,'Reservation Register'!D:D,A2:A,'Reservation Register'!I:I,\"Partially Consumed\"),0)))"
   },
   'Tool Master': {
     col: 13,  // M (On Hand) — Currently With at K, Opening at L. In-store on-hand = Opening + Adjustments; issued = 0.
