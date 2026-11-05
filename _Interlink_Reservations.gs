@@ -184,8 +184,8 @@ function IM_projKey_(s) {
 
 /**
  * A project delete (Masters.executeProjectDelete, started from PM) removes requisition / reservation rows
- * from here and lists their item codes in the hidden sheet _PD_Refresh (column A). Refresh those items'
- * stock snapshots in IMS's own context, then clear the list.
+ * from here and lists their item codes in the temporary hidden sheet _PD_Refresh (column A). Refresh those
+ * items' stock snapshots in IMS's own context, then delete the sheet (it leaves no trace).
  */
 function IM_refreshPendingSnapshots_() {
   var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName('_PD_Refresh');
@@ -199,7 +199,7 @@ function IM_refreshPendingSnapshots_() {
   });
   if (rm.length) updateItemSnapshotsBatch(rm);
   if (sfg.length) updateSfgSnapshotsBatch(sfg);
-  sh.clearContents();
+  ss.deleteSheet(sh);
   return list.length;
 }
 
