@@ -634,7 +634,7 @@ function rebuildDashboard() {
 
   // ---- Section: OPERATIONS (reservations + this month's flow) ----
   const opsRow = catEndRow + 2;
-  const opsData = _dashOperationsData(ss);
+  const opsData = _dashOperationsData(ss, rmDataShared);
   _dashSectionHeader(sh, opsRow, 'OPERATIONS (last 30 days)', '#1F4E79');
   _dashKpiCard(sh, opsRow + 1, 1, 'ACTIVE RESERVATIONS', opsData.activeReservations + ' item(s)',
     opsData.activeReservations ? '#D6EAF8' : '#EBF3FB', 14);
@@ -680,7 +680,7 @@ function rebuildDashboard() {
 }
 
 // Aggregate operational metrics for Dashboard OPERATIONS section.
-function _dashOperationsData(ss) {
+function _dashOperationsData(ss, rmDataShared) {
   const out = { activeReservations: 0, reservedValue: 0,
                 grnsThisMonth: 0, grnValueThisMonth: 0,
                 deliveriesThisMonth: 0, deliveryValueThisMonth: 0 };
