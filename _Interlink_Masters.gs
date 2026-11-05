@@ -132,6 +132,7 @@ function IM_onOpen_() {
   // Self-heal the PM reservation queue: recreate its trigger if missing, and drain anything waiting.
   try { IM_ensureQueueTrigger_(); IM_processReservationRequests(); } catch (e) {}
   IM_refreshDropdowns(true);  // keep PRJ-### project suggestions current (never throws when quiet)
+  try { Masters.registerSystemSheet('ims', SpreadsheetApp.getActive().getId()); } catch (e) {}  // lets PM's project delete find this sheet
 }
 
 function IM_about_() {

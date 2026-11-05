@@ -182,6 +182,27 @@ function IM_projKey_(s) {
   return m ? m[0].toUpperCase() : String(s).trim().toLowerCase();
 }
 
+/**
+ * A project delete (Masters.executeProjectDelete, started from PM) removes requisition / reservation rows
+ * from here and lists their item codes in the hidden sheet _PD_Refresh (column A). Refresh those items'
+ * stock snapshots in IMS's own context, then clear the list.
+ */
+function IM_refreshPendingSnapshots_() {
+  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName('_PD_Refresh');
+  if (!sh || sh.getLastRow() < 1) return 0;
+  var codes = {};
+  sh.getRange(1, 1, sh.getLastRow(), 1).getValues().forEach(function (r) { if (r[0]) codes[String(r[0])] = true; });
+  var list = Object.keys(codes), rm = [], sfg = [];
+  var items = ss.getSheetByName('Item Master'), sfgs = ss.getSheetByName('SFG Master');
+  list.forEach(function (c) {
+    if (items && getRowByCode(items, c)) rm.push(c); else if (sfgs && getRowByCode(sfgs, c)) sfg.push(c);
+  });
+  if (rm.length) updateItemSnapshotsBatch(rm);
+  if (sfg.length) updateSfgSnapshotsBatch(sfg);
+  sh.clearContents();
+  return list.length;
+}
+
 /** Menu action: process waiting PM requests right now. */
 function IM_processReservationRequestsNow() {
   var r = IM_processReservationRequests();
@@ -207,6 +228,7 @@ function IM_processReservationRequests() {
     }).length;
     reg.getRange('Q1').setValue('Heartbeat: last run ' +
       Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM HH:mm:ss') + ' · triggers: ' + n);
+    try { IM_refreshPendingSnapshots_(); } catch (e) { Logger.log('pending snapshots: ' + e.message); }
     if (reg.getLastRow() < 2) return out;
     var rows = reg.getRange(2, 1, reg.getLastRow() - 1, IM_REG_WIDTH).getValues();
 
