@@ -1311,8 +1311,23 @@ function releaseReservation(d) {
     if (d.status === 'Consumed') {
       const q = (d.qty === undefined || d.qty === '' || d.qty === null) ? left : Number(d.qty);
       if (!(q > 0) || q > left + 0.0005) throw new Error('Consumed qty must be between 0 and ' + left + ' (still held).');
-      const st = IM_consumeRsvRow_(reg, rowNum, vals, q, d.notes);
-      msg = 'Reservation ' + d.resNo + ': consumed ' + q + (st === 'Consumed' ? ' (fully consumed)' : ', ' + (Math.round((left - q) * 1000) / 1000) + ' still reserved');
+      const rmMaster = ss.getSheetByName('Item Master');
+      if (rmMaster && getRowByCode(rmMaster, code)) {
+        // Raw material: the outward record is a Material Requisition (stock goes down, Finance picks up the cost).
+        // It consumes THIS reservation first (forReservation), then any other open ones of the same project and item.
+        const out = postRequisitionRows({
+          date: new Date(), skipPdf: true, takenBy: currentUserEmail(),
+          project: String(vals[7]).replace(/ \/ HW-\d+$/, ''),
+          forReservation: { resNo: d.resNo },
+          lineItems: [{ itemCode: code, qty: q, purpose: 'Consumed from ' + d.resNo, remarks: d.notes || '' }]
+        });
+        const after = reg.getRange(rowNum, 9).getValue();
+        msg = 'Reservation ' + d.resNo + ': consumed ' + q + (after === 'Consumed' ? ' (fully consumed)' : ', ' + (Math.round((left - q) * 1000) / 1000) + ' still reserved') +
+              ' · posted as requisition ' + out.reqNo;
+      } else {  // SFG / FG: no requisition path in IMS, so only the reservation changes
+        const st = IM_consumeRsvRow_(reg, rowNum, vals, q, d.notes);
+        msg = 'Reservation ' + d.resNo + ': consumed ' + q + (st === 'Consumed' ? ' (fully consumed)' : ', ' + (Math.round((left - q) * 1000) / 1000) + ' still reserved');
+      }
     } else {
       reg.getRange(rowNum, 9).setValue(d.status);       // I Status
       reg.getRange(rowNum, 13).setValue(new Date());    // M Released/Consumed At

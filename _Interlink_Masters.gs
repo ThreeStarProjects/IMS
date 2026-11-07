@@ -149,12 +149,14 @@ function IM_about_() {
 }
 
 // -----------------------------------------------------------------------------
-// Dropdown refresher (v0.4 Phase 1b, IMS). Appends the active Masters project labels
-// ("PRJ-001 — Test") to the Projects list on the Dropdowns sheet (col K), which feeds the
+// Dropdown refresher (v0.4 Phase 1b, IMS). Keeps the active Masters project labels
+// ("PRJ-001 — Test") in the Projects list on the Dropdowns sheet (col K), which feeds the
 // project suggestions on the requisition and reservation forms. Without it nobody picks a
 // PRJ-### when issuing material, and the PM reservation / Finance cost links cannot match.
-// Only adds labels that are missing: names already in the list (plain names typed by hand)
-// stay untouched. Runs when IMS opens (quiet) and from 🔗 Interlink → Refresh dropdowns.
+// The list becomes: the plain names typed by hand (kept, in their order) + one label per active
+// Masters project. So new projects appear, a renamed project gets its new label, and the labels
+// of deleted / finished projects disappear. If Masters returns no active project at all, nothing
+// is removed. Runs when IMS opens (quiet) and from 🔗 Interlink → Refresh dropdowns.
 // -----------------------------------------------------------------------------
 function IM_refreshDropdowns(quiet) {
   try {
@@ -164,12 +166,22 @@ function IM_refreshDropdowns(quiet) {
     if (!quiet) CacheService.getScriptCache().remove(IM_CACHE_KEY + 'projects');  // manual refresh: skip the 5-min cache
 
     var col = dd.getLastRow() >= 2 ? dd.getRange(2, 11, dd.getLastRow() - 1, 1).getValues() : [];
-    var have = {}, last = 0;  // last = number of rows down to the final non-empty cell
-    col.forEach(function (r, i) { if (r[0] !== '') { have[String(r[0])] = true; last = i + 1; } });
-    var add = IM_projectLabels().filter(function (l) { return !have[l]; });
-    if (add.length) dd.getRange(last + 2, 11, add.length, 1).setValues(add.map(function (l) { return [l]; }));
-
-    if (!quiet) ss.toast(add.length ? 'Added ' + add.length + ' project(s) from Masters.' : 'Projects already up to date.', '🔗 Interlink', 5);
+    var LABEL = /^PRJ-\d+ — /;
+    var labels = IM_projectLabels(), cur = [], plain = [];
+    col.forEach(function (r) {
+      var v = String(r[0]);
+      if (v === '') return;
+      cur.push(v);
+      if (!LABEL.test(v) || !labels.length) plain.push(v);   // typed-by-hand names stay; labels are rebuilt from Masters
+    });
+    var next = plain.concat(labels.filter(function (l) { return plain.indexOf(l) < 0; }));
+    var changed = next.join('\u0001') !== cur.join('\u0001');
+    if (changed) {
+      var n = Math.max(next.length, col.length), out = [];
+      for (var i = 0; i < n; i++) out.push([i < next.length ? next[i] : '']);
+      dd.getRange(2, 11, n, 1).setValues(out);
+    }
+    if (!quiet) ss.toast(changed ? 'Project list updated from Masters (' + labels.length + ' project(s)).' : 'Projects already up to date.', '🔗 Interlink', 5);
   } catch (e) {
     if (!quiet) SpreadsheetApp.getUi().alert('Could not refresh projects from Masters', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }

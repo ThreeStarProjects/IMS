@@ -282,8 +282,9 @@ function postRequisitionRows(formData) {
 
     reg.getRange(startRow, 1, rows.length, rows[0].length).setValues(rows);
 
-    // A requisition is the outward event: consume matching Active PM reservations (never throws).
-    IM_consumePmReservations_(formData.project, formData.lineItems, reqNo);
+    // A requisition is the outward event: consume the project's matching open reservations (never throws).
+    // formData.forReservation = { resNo } is set by the Release Reservation form: that reservation goes first.
+    IM_consumePmReservations_(formData.project, formData.lineItems, reqNo, formData.forReservation);
 
     updateItemSnapshotsBatch(touched);
 

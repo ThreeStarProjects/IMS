@@ -137,37 +137,41 @@ function IM_consumeRsvRow_(reg, rowNum, vals, q, note) {
 
 /**
  * Called by postRequisitionRows (20_Registers.gs) right after the requisition rows are written.
- * A Material Requisition is the outward event, so it consumes the matching open PM reservations
- * instead of someone marking them Consumed by hand. A reservation matches when:
- *   - it was made from PM: For (Reference) = "<project> / HW-nnn",
- *   - its project matches the requisition's by PRJ-### id (or by exact name when there is no id),
- *   - the item code matches.
+ * A Material Requisition is the outward event, so it consumes the open reservations of the items it
+ * issues instead of someone marking them Consumed by hand. A reservation matches when
+ *   - the item code matches, and
+ *   - it is for the same project: its For (Reference) (a trailing " / HW-nnn" from PM is ignored) and
+ *     the requisition's Project share the PRJ-### id or the project name (IM_sameProject_). This covers
+ *     reservations made from PM and reservations typed by hand in IMS. A reference that is not this
+ *     project (a customer order, another project) is never touched.
+ * `target` ({ resNo }) is the reservation picked on the Release form: it is served first.
  * Oldest first, each takes min(still held, qty issued and not yet used): issuing less than the
  * whole reservation makes it "Partially Consumed" and the rest stays reserved.
  * Runs before the snapshot refresh in postRequisitionRows, so one refresh covers both.
  * Never throws: a requisition must always post. Returns how many reservations it touched.
  */
-function IM_consumePmReservations_(project, lines, reqNo) {
+function IM_consumePmReservations_(project, lines, reqNo, target) {
   try {
     var reg = SpreadsheetApp.getActive().getSheetByName(IM_REG);
-    if (!reg || reg.getLastRow() < 2 || !project) return 0;
-    var key = IM_projKey_(project);
+    if (!reg || reg.getLastRow() < 2 || (!project && !target)) return 0;
     var issued = {};  // item code → qty issued in this requisition, not yet matched
     lines.forEach(function (l) { issued[l.itemCode] = (issued[l.itemCode] || 0) + Number(l.qty); });
 
     var data = reg.getRange(2, 1, reg.getLastRow() - 1, 15).getValues();
-    var touched = 0;
-    var PM_REF = / \/ HW-\d+$/;
-    data.forEach(function (r, i) {  // Register rows are in reservation-number order, so oldest first
-      var code = r[3], ref = String(r[7]);
-      if (!IM_isOpenRsv_(r[8]) || !PM_REF.test(ref) || !(issued[code] > 0)) return;
-      if (IM_projKey_(ref.replace(PM_REF, '')) !== key) return;
+    var touched = 0, targetNo = target && target.resNo;
+    var take = function (r, i) {
+      var code = r[3];
       var left = IM_round3_((Number(r[5]) || 0) - (Number(r[14]) || 0));
-      var take = IM_round3_(Math.min(left, issued[code]));
-      if (!(take > 0)) return;
-      issued[code] = IM_round3_(issued[code] - take);
-      IM_consumeRsvRow_(reg, i + 2, r, take, 'Consumed ' + take + ' by ' + reqNo);
+      var t = IM_round3_(Math.min(left, issued[code]));
+      if (!(t > 0)) return;
+      issued[code] = IM_round3_(issued[code] - t);
+      IM_consumeRsvRow_(reg, i + 2, r, t, 'Consumed ' + t + ' by ' + reqNo);
       touched++;
+    };
+    if (targetNo) data.forEach(function (r, i) { if (r[1] === targetNo && IM_isOpenRsv_(r[8]) && issued[r[3]] > 0) take(r, i); });
+    data.forEach(function (r, i) {  // Register rows are in reservation-number order, so oldest first
+      if (!project || r[1] === targetNo || !IM_isOpenRsv_(r[8]) || !(issued[r[3]] > 0)) return;
+      if (IM_sameProject_(project, r[7])) take(r, i);
     });
     return touched;
   } catch (e) {
@@ -176,10 +180,20 @@ function IM_consumePmReservations_(project, lines, reqNo) {
   }
 }
 
-/** Project comparison key: the PRJ-### id when there is one, else the trimmed lower-case name. */
-function IM_projKey_(s) {
-  var m = /PRJ-\d+/i.exec(String(s));
-  return m ? m[0].toUpperCase() : String(s).trim().toLowerCase();
+/** What identifies a project in a free-text field: the text, its PRJ-### id, and the name after "PRJ-001 — ". */
+function IM_projKeys_(text) {
+  var s = String(text || '').replace(/ \/ HW-\d+$/, '').trim();
+  if (!s) return [];
+  var keys = [s.toLowerCase()], m = /PRJ-\d+/i.exec(s), at = s.indexOf(' — ');
+  if (m) keys.push(m[0].toUpperCase());
+  if (at >= 0 && s.length > at + 3) keys.push(s.slice(at + 3).trim().toLowerCase());
+  return keys;
+}
+
+/** True when two project texts name the same project (same PRJ-### id, or same name). */
+function IM_sameProject_(a, b) {
+  var kb = IM_projKeys_(b);
+  return IM_projKeys_(a).some(function (k) { return kb.indexOf(k) >= 0; });
 }
 
 /**
