@@ -232,6 +232,7 @@ function IM_processReservationRequests() {
   var out = IM_processReservationRequestsLocked_();
   // after the lock is released: a requisition takes the same document lock
   try { IM_processSelfTestCommands_(); } catch (e) { Logger.log('self-test commands: ' + e.message); }
+  try { IM_processPmCommands_(); } catch (e) { Logger.log('PM commands: ' + e.message); }
   return out;
 }
 
@@ -335,6 +336,30 @@ function IM_processSelfTestCommands_() {
       result = out.reqNo;
     } catch (e) { status = 'Error'; result = e.message; }
     sh.getRange(i + 2, 4, 1, 2).setValues([[status, result]]);
+    done++;
+  });
+  return done;
+}
+
+/**
+ * Commands PM leaves in the hidden sheet _PM_Commands (A Id | B Action | C Params JSON | D Status | E Result JSON |
+ * F By | G At), run here in IMS's own context from the 1-minute trigger, after the reservation queue released its lock
+ * (addItem numbers the item under the same document lock). The ONLY action is "addItem": the real addItem(d), so the
+ * dropdown checks, duplicate detection and item-code numbering are exactly those of the IMS form.
+ * Status becomes Done (the Result says whether the item was created or why not) or Error (the command itself was bad).
+ */
+function IM_processPmCommands_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName('_PM_Commands');
+  if (!sh || sh.getLastRow() < 2) return 0;
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues(), done = 0;
+  rows.forEach(function (r, i) {
+    if (r[3] !== 'Pending') return;
+    var status = 'Done', result;
+    try {
+      if (r[1] !== 'addItem') throw new Error('Unknown action: ' + r[1]);
+      result = addItem(JSON.parse(r[2]));
+    } catch (e) { status = 'Error'; result = { success: false, message: e.message }; }
+    sh.getRange(i + 2, 4, 1, 2).setValues([[status, JSON.stringify(result)]]);
     done++;
   });
   return done;
