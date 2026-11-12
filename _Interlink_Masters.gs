@@ -123,10 +123,8 @@ function IM_onOpen_() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('🔗 Interlink')
     .addItem('Refresh dropdowns from Masters', 'IM_refreshDropdowns')
-    .addItem('Clear Masters cache',            'IM_clearCache')
     .addSeparator()
     .addItem('Process PM reservation requests now', 'IM_processReservationRequestsNow')
-    .addItem('Clean up old queue sheet', 'IM_cleanupOldQueueSheet')
     .addSeparator()
     .addItem('About',                          'IM_about_')
     .addToUi();
