@@ -229,6 +229,13 @@ function IM_processReservationRequestsNow() {
  * row is dropped and its Request ID is handed to the existing reservation (PM then finds it).
  */
 function IM_processReservationRequests() {
+  var out = IM_processReservationRequestsLocked_();
+  // after the lock is released: a requisition takes the same document lock
+  try { IM_processSelfTestCommands_(); } catch (e) { Logger.log('self-test commands: ' + e.message); }
+  return out;
+}
+
+function IM_processReservationRequestsLocked_() {
   var out = { done: 0, failed: 0 };
   var lock = LockService.getDocumentLock();
   if (!lock.tryLock(5000)) { Logger.log('queue: busy, next run will do it'); return out; }
@@ -300,4 +307,35 @@ function IM_cleanupOldQueueSheet() {
   if (ok !== ui.Button.YES) return;
   ss.deleteSheet(old);
   ss.toast('Old queue sheet deleted.', '🔗 Interlink', 5);
+}
+
+/**
+ * PM's system self-test cannot call IMS code directly, so it leaves commands in the hidden sheet _SelfTest_Cmd
+ * (A Id | B Action | C Params JSON | D Status | E Result) and this runs them in IMS's own context, from the
+ * 1-minute trigger. The ONLY action is "requisition": a normal Material Requisition (the real postRequisitionRows,
+ * so reservations are consumed and stock moves exactly as for a person). Guards: the project must contain
+ * "ZZ-SELFTEST", the item must exist in Item Master, qty 0 < n <= 5. Anything else is refused.
+ */
+function IM_processSelfTestCommands_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName('_SelfTest_Cmd');
+  if (!sh || sh.getLastRow() < 2) return 0;
+  var rows = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues(), done = 0;
+  rows.forEach(function (r, i) {
+    if (r[3] !== 'Pending') return;
+    var status = 'Done', result = '';
+    try {
+      var p = JSON.parse(r[2]), qty = Number(p.qty);
+      if (r[1] !== 'requisition') throw new Error('Unknown action: ' + r[1]);
+      if (String(p.project).indexOf('ZZ-SELFTEST') < 0) throw new Error('Refused: project is not a ZZ-SELFTEST project');
+      if (!(qty > 0 && qty <= 5)) throw new Error('Refused: qty must be 1-5');
+      var items = SpreadsheetApp.getActive().getSheetByName('Item Master');
+      if (!items || !getRowByCode(items, p.itemCode)) throw new Error('Item not found: ' + p.itemCode);
+      var out = postRequisitionRows({ date: new Date(), project: p.project, takenBy: 'self-test', skipPdf: true,
+        lineItems: [{ itemCode: p.itemCode, qty: qty, purpose: 'Self-test', remarks: 'ZZ-SELFTEST' }] });
+      result = out.reqNo;
+    } catch (e) { status = 'Error'; result = e.message; }
+    sh.getRange(i + 2, 4, 1, 2).setValues([[status, result]]);
+    done++;
+  });
+  return done;
 }
