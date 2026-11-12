@@ -285,3 +285,19 @@ function IM_processReservationRequests() {
     return out;
   } finally { lock.releaseLock(); }
 }
+
+/** Menu: delete the hidden "_old PM Reservation Requests" sheet kept after the move into the Register. Asks first. */
+function IM_cleanupOldQueueSheet() {
+  var ui = SpreadsheetApp.getUi(), ss = SpreadsheetApp.getActive();
+  var old = ss.getSheetByName('_old ' + IM_OLD_QUEUE);
+  if (!old) { ui.alert('Clean up', 'Nothing to clean up: the old queue sheet is already gone.', ui.ButtonSet.OK); return; }
+  var live = ss.getSheetByName(IM_OLD_QUEUE);
+  var pending = 0;
+  if (live && live.getLastRow() >= 2) live.getRange(2, 1, live.getLastRow() - 1, 8).getValues().forEach(function (r) { if (r[7] === 'Pending') pending++; });
+  if (pending) { ui.alert('Clean up', 'The queue sheet "' + IM_OLD_QUEUE + '" still has ' + pending + ' pending request(s). Run IM_installReservationRegister() first. Nothing was deleted.', ui.ButtonSet.OK); return; }
+  var ok = ui.alert('Delete the old queue sheet?',
+    '"' + old.getName() + '" (' + Math.max(old.getLastRow() - 1, 0) + ' old request row(s)) is no longer used: all reservations live in the Reservation Register.\n\nThis cannot be undone. Delete it?', ui.ButtonSet.YES_NO);
+  if (ok !== ui.Button.YES) return;
+  ss.deleteSheet(old);
+  ss.toast('Old queue sheet deleted.', '🔗 Interlink', 5);
+}
