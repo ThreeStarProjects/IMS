@@ -785,7 +785,12 @@ function addRequisitionMultiLine(d) {
       if (!check.ok) return { success: false, needsConfirm: true, warnings: check.warnings, message: 'Some lines exceed Available stock. Confirm to proceed anyway.' };
     }
     const res = postRequisitionRows(d);
-    return { success: true, message: 'Requisition ' + res.reqNo + ' created (' + res.rows + ' lines).', code: res.reqNo, pdfDownloadUrl: res.pdfDownloadUrl };
+    const proj = String(d.project || '').trim();
+    if (proj) { try { PropertiesService.getUserProperties().setProperty('IM_LAST_REQ_PROJECT', proj); } catch (e) {} }   // offered again next time
+    // what happened next, in plain words: the reservation(s) it reduced and when Finance will show the cost
+    const note = (res.consumed ? ' ' + res.consumed + ' reservation(s) of this project were reduced.' : '') +
+                 (/^PRJ-\d+/i.test(proj) ? ' Finance shows the cost within about 10 minutes.' : '');
+    return { success: true, message: 'Requisition ' + res.reqNo + ' created (' + res.rows + ' lines).' + note, code: res.reqNo, pdfDownloadUrl: res.pdfDownloadUrl };
   } catch (e) {
     return { success: false, message: e.message };
   }

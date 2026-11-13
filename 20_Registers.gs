@@ -284,7 +284,7 @@ function postRequisitionRows(formData) {
 
     // A requisition is the outward event: consume the project's matching open reservations (never throws).
     // formData.forReservation = { resNo } is set by the Release Reservation form: that reservation goes first.
-    IM_consumePmReservations_(formData.project, formData.lineItems, reqNo, formData.forReservation);
+    const consumed = IM_consumePmReservations_(formData.project, formData.lineItems, reqNo, formData.forReservation);
 
     updateItemSnapshotsBatch(touched);
 
@@ -296,7 +296,7 @@ function postRequisitionRows(formData) {
     }, 'generateReqSlipPdf', reqNo);
     if (pdf) writeBackPdfLink(reg, 2, reqNo, 12, pdf.url); // col B = REQ No, col L = Slip PDF Link
 
-    return { reqNo: reqNo, rows: rows.length, pdfUrl: pdf ? pdf.url : null, pdfDownloadUrl: pdf ? pdf.downloadUrl : null };
+    return { reqNo: reqNo, rows: rows.length, consumed: consumed || 0, pdfUrl: pdf ? pdf.url : null, pdfDownloadUrl: pdf ? pdf.downloadUrl : null };
   } finally {
     lock.releaseLock();
   }

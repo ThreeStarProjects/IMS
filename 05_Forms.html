@@ -1391,6 +1391,8 @@ function populateDropdowns(formId, data) {
   }
   _fillDatalist('project-list',  data.projects);
   _fillDatalist('employee-list', data.employees);
+  // requisition form: offer the project used last time (only when the box is still empty)
+  if (data.lastProject) { const _lp = document.getElementById('areq-project'); if (_lp && !_lp.value) _lp.value = data.lastProject; }
   // supplier datalist for multi-supplier input (use label so user sees name)
   const supDl = document.getElementById('supplier-list');
   if (supDl && data.suppliers) {
@@ -1513,6 +1515,10 @@ function onPcsQtyInput(inputEl, source) {
 }
 
 function addLineIfEmpty(formId) {
+  if (formId === 'form-add-requisition' && window._IMS && window._IMS.lastProject) {
+    const _lp = document.getElementById('areq-project');
+    if (_lp && !_lp.value) _lp.value = window._IMS.lastProject;   // the project used last time
+  }
   const prefix = { 'form-add-inward':'ain','form-add-requisition':'areq','form-add-jw-out':'ajwo','form-add-po':'apo','form-add-rfq':'arfq' }[formId];
   if (formId === 'form-add-fg-delivery' && document.querySelector('#afgd-main-lines tbody').children.length === 0) addFgdMainLine();
   if (formId === 'form-recipe') onBomModeChange();  // defaults to New; lazy-loads edit picker if user switches

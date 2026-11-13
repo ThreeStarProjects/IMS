@@ -126,6 +126,7 @@ function IM_onOpen_() {
     .addSeparator()
     .addItem('Process PM reservation requests now', 'IM_processReservationRequestsNow')
     .addSeparator()
+    .addItem('❓ Start here',                  'IM_showStartHere')
     .addItem('About',                          'IM_about_')
     .addToUi();
   // Self-heal the PM reservation queue: recreate its trigger if missing, and drain anything waiting.
@@ -184,4 +185,37 @@ function IM_refreshDropdowns(quiet) {
   } catch (e) {
     if (!quiet) SpreadsheetApp.getUi().alert('Could not refresh projects from Masters', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
+}
+
+/** Menu: ❓ Start here. Creates the tab the first time, then just opens it. */
+function IM_showStartHere() {
+  var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName('Start here');
+  if (!sh) {
+    sh = ss.insertSheet('Start here', 0);
+    var rows = [
+      ['Start here: IMS (Inventory)', 'title'],
+      ['The normal flow, step by step', 'h'],
+      ['1.  Goods arrive: Add Inward (GRN). Stock goes up and the item shows the new quantity.', ''],
+      ['2.  Reservations normally come from PM: when someone ticks Reserve? on the PM Hardware List, a row appears in the Reservation Register as Requested and becomes Active within about a minute. You do not have to do anything. You can also reserve by hand with the Reservation form.', ''],
+      ["3.  Issuing material to a project: Add Material Requisition. Pick the project from the dropdown (it starts with PRJ-…). Then the project's reservation reduces by itself, and Finance shows the cost within about 10 minutes. The form remembers the last project you used.", ''],
+      ['4.  If a requisition is more than the free stock, the form warns you and asks you to confirm before saving.', ''],
+      ['5.  Reservation form, Release or Consume: Released frees the stock again. Consumed records the issue by posting a requisition for you (a partial quantity is allowed; the rest stays reserved).', ''],
+      ['6.  A new item needed by a project can be added from PM (🔗 Interlink → ➕ Add item to IMS). Enter its Avg Rate in Item Master, so Finance can cost it when it is issued.', ''],
+      ['What the words mean', 'h'],
+      ['Free stock  what is in stock minus what projects have reserved.', ''],
+      ['Requisition  issuing material from the store to a project. Reservation  holding stock for a project before it is issued.', ''],
+      ['Reservation status  Requested (PM asked, waiting for IMS), Active (held), Partially Consumed (some issued, the rest still held), Consumed (all issued), Released (given back), Error (see the Notes column for why).', ''],
+      ['If something looks wrong', 'h'],
+      ['•  🔗 Interlink → Process PM reservation requests now: answers PM requests at once if they are waiting.', ''],
+      ['•  🔗 Interlink → Refresh dropdowns from Masters: new PM projects appear in the project dropdown.', ''],
+      ['•  In PM, 🔗 Interlink → 📋 Needs attention and 🩺 Health check show what is stuck, in plain words.', '']
+    ];
+    sh.getRange(1, 1, rows.length, 1).setValues(rows.map(function (r) { return [r[0]]; })).setWrap(true).setVerticalAlignment('top');
+    sh.setColumnWidth(1, 900);
+    rows.forEach(function (r, i) {
+      if (r[1] === 'title') sh.getRange(i + 1, 1).setFontSize(16).setFontWeight('bold');
+      if (r[1] === 'h') sh.getRange(i + 1, 1).setFontWeight('bold').setBackground('#DDEBF7');
+    });
+  }
+  ss.setActiveSheet(sh);
 }
