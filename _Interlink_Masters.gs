@@ -181,7 +181,9 @@ function IM_refreshDropdowns(quiet) {
       for (var i = 0; i < n; i++) out.push([i < next.length ? next[i] : '']);
       dd.getRange(2, 11, n, 1).setValues(out);
     }
-    if (!quiet) ss.toast(changed ? 'Project list updated from Masters (' + labels.length + ' project(s)).' : 'Projects already up to date.', '🔗 Interlink', 5);
+    var addedEmp = IM_refreshEmployeeDropdown_(dd);
+    if (!quiet) ss.toast((changed ? 'Project list updated from Masters (' + labels.length + ' project(s)).' : 'Projects already up to date.') +
+      (addedEmp ? ' ' + addedEmp + ' employee(s) added to the employee list.' : ' Employee list already has every active employee.'), '🔗 Interlink', 6);
   } catch (e) {
     if (!quiet) SpreadsheetApp.getUi().alert('Could not refresh projects from Masters', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
@@ -218,4 +220,26 @@ function IM_showStartHere() {
     });
   }
   ss.setActiveSheet(sh);
+}
+
+/**
+ * Employees (Dropdowns col I, used for Taken By / Requested By): append the active Masters employees the list lacks.
+ * ADDITIVE: names already there are never changed or removed (older records keep working). Names are compared ignoring
+ * case, punctuation and extra spaces. Returns how many were added; 0 when Masters cannot be read.
+ */
+function IM_refreshEmployeeDropdown_(dd) {
+  try {
+    var norm = function (s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+    var col = dd.getLastRow() >= 2 ? dd.getRange(2, 9, dd.getLastRow() - 1, 1).getValues() : [];
+    var have = {}, last = 0;
+    col.forEach(function (r, i) { if (String(r[0]).trim() !== '') { have[norm(r[0])] = true; last = i + 1; } });
+    var add = [], seen = {};
+    (IM_getEmployees() || []).forEach(function (r) {
+      var n = String(r.Name || '').trim(), k = norm(n);
+      if (!k || String(r.Status) === 'Left' || have[k] || seen[k]) return;
+      seen[k] = true; add.push(n);
+    });
+    if (add.length) dd.getRange(last + 2, 9, add.length, 1).setValues(add.map(function (n) { return [n]; }));
+    return add.length;
+  } catch (e) { return 0; }
 }
