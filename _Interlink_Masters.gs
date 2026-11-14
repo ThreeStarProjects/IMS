@@ -123,6 +123,7 @@ function IM_onOpen_() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('🔗 Interlink')
     .addItem('Refresh dropdowns from Masters', 'IM_refreshDropdowns')
+    .addItem('➕ Add employee',                'IM_addEmployeeDialog')
     .addSeparator()
     .addItem('Process PM reservation requests now', 'IM_processReservationRequestsNow')
     .addSeparator()
@@ -242,4 +243,33 @@ function IM_refreshEmployeeDropdown_(dd) {
     if (add.length) dd.getRange(last + 2, 9, add.length, 1).setValues(add.map(function (n) { return [n]; }));
     return add.length;
   } catch (e) { return 0; }
+}
+
+// -----------------------------------------------------------------------------
+// ➕ Add employee. The person is created in Masters (the one official list) and this system's own list is updated at
+// once. Masters editors only (every Masters write is). Masters refuses an exact duplicate and warns on a similar name.
+// -----------------------------------------------------------------------------
+function IM_addEmployeeDialog() {
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(IM_addEmployeeHtml_()).setWidth(430).setHeight(430), '➕ Add employee');
+}
+function IM_addEmployeeHtml_() { return "<div style=\"font:14px Arial,sans-serif;padding:14px;color:#222\">\n<p style=\"margin:0 0 12px;color:#555\">The person is saved in <b>Masters</b>, the official employee list. The other systems pick the name up from there.</p>\n<label>Full name *</label><input id=\"n\" maxlength=\"80\" style=\"width:100%;padding:7px;margin:3px 0 10px;box-sizing:border-box\">\n<label>Role (optional)</label><input id=\"r\" maxlength=\"60\" style=\"width:100%;padding:7px;margin:3px 0 10px;box-sizing:border-box\">\n<label>Phone (optional)</label><input id=\"p\" maxlength=\"30\" style=\"width:100%;padding:7px;margin:3px 0 10px;box-sizing:border-box\">\n<div id=\"m\" style=\"min-height:42px;margin:6px 0;font-size:13px\"></div>\n<button id=\"go\" onclick=\"send(false)\" style=\"padding:8px 16px;background:#1F4E79;color:#fff;border:0;border-radius:4px;cursor:pointer\">Add employee</button>\n<button id=\"any\" onclick=\"send(true)\" style=\"display:none;padding:8px 16px;background:#b45309;color:#fff;border:0;border-radius:4px;cursor:pointer\">Add anyway (different person)</button>\n<button onclick=\"google.script.host.close()\" style=\"padding:8px 16px;margin-left:6px;border:1px solid #bbb;background:#fff;border-radius:4px;cursor:pointer\">Close</button>\n</div>\n<script>\nfunction $(i){return document.getElementById(i);}\nfunction say(t,c){var m=$('m');m.textContent=t;m.style.color=c||'#222';}\nfunction busy(b){$('go').disabled=b;$('any').disabled=b;}\nfunction send(confirm){\n  var name=$('n').value.replace(/\\s+/g,' ').trim();\n  if(!name){say('Please type the name.','#b91c1c');return;}\n  busy(true);say('Saving\u2026');\n  google.script.run.withSuccessHandler(done).withFailureHandler(function(e){busy(false);say('Could not save: '+(e&&e.message||e),'#b91c1c');})\n    .IM_addEmployee({name:name,role:$('r').value,phone:$('p').value,confirmSimilar:confirm===true});\n}\nfunction done(r){\n  busy(false);$('any').style.display='none';\n  if(r&&r.ok){say('Added '+r.name+' ('+r.id+'). '+(r.note||''),'#166534');$('go').style.display='none';$('n').disabled=$('r').disabled=$('p').disabled=true;}\n  else if(r&&r.duplicate){say(r.duplicate.name+' is already in Masters ('+r.duplicate.id+', '+r.duplicate.status+'). Nothing was added.','#b45309');}\n  else if(r&&r.similar){say('Similar name(s) already in Masters: '+r.similar.map(function(s){return s.name+' ('+s.id+', '+s.status+')';}).join('; ')+'. If this is the same person, close this window. If it is a different person, click Add anyway.','#b45309');$('any').style.display='inline-block';}\n  else{say((r&&r.error)||'Something went wrong.','#b91c1c');}\n}\n</script>"; }
+/** Called by the dialog. Returns { ok, id, name, note } | { ok:false, duplicate | similar | error }. Never throws. */
+function IM_addEmployee(d) {
+  try {
+    var r = Masters.addEmployeeChecked({ Name: d.name, Role: d.role, Phone: d.phone, confirmSimilar: d.confirmSimilar === true });
+    if (r.ok) { try { IM_clearCache(); } catch (e) {} r.note = IM_addEmployeePost_(r, d); }
+    return r;
+  } catch (e) {
+    var m = String((e && e.message) || e);
+    return { ok: false, error: /Editors only|Admin only|permission|access/i.test(m)
+      ? 'Only Masters editors can add employees. Ask the administrator to add you as an editor, or ask them to add this person.' : m };
+  }
+}
+/** IMS: the name goes into the employee list (Taken By / Requested By) straight away. */
+function IM_addEmployeePost_(r, d) {
+  try {
+    var dd = SpreadsheetApp.getActive().getSheetByName('Dropdowns');
+    if (dd) IM_refreshEmployeeDropdown_(dd);
+    return r.name + ' now appears in the employee list (Taken By / Requested By). Payroll: the accountant adds the salary in Finance.';
+  } catch (e) { return 'Saved in Masters. The employee list updates the next time IMS is opened.'; }
 }
