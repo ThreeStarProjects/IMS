@@ -184,7 +184,7 @@ function IM_refreshDropdowns(quiet) {
     }
     var addedEmp = IM_refreshEmployeeDropdown_(dd);
     if (!quiet) ss.toast((changed ? 'Project list updated from Masters (' + labels.length + ' project(s)).' : 'Projects already up to date.') +
-      (addedEmp ? ' ' + addedEmp + ' employee(s) added to the employee list.' : ' Employee list already has every active employee.'), '🔗 Interlink', 6);
+      (addedEmp ? ' Employee list refreshed from Masters (' + addedEmp + ' people).' : ' Employee list not changed (Masters returned no employees).'), '🔗 Interlink', 6);
   } catch (e) {
     if (!quiet) SpreadsheetApp.getUi().alert('Could not refresh projects from Masters', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
@@ -224,24 +224,30 @@ function IM_showStartHere() {
 }
 
 /**
- * Employees (Dropdowns col I, used for Taken By / Requested By): append the active Masters employees the list lacks.
- * ADDITIVE: names already there are never changed or removed (older records keep working). Names are compared ignoring
- * case, punctuation and extra spaces. Returns how many were added; 0 when Masters cannot be read.
+ * Employees (Dropdowns col I, used for Taken By / Requested By): GENERATED from Masters' Employees. The column is rewritten
+ * completely (active people, A to Z); it exists only because the form dropdowns read this sheet, and it is not a list to edit.
+ * Names not active in Masters disappear from it (requisitions already saved keep their text). If Masters cannot be read, or returns
+ * nobody, the column is left exactly as it is. Returns how many names are in the list now; 0 when nothing was done.
  */
 function IM_refreshEmployeeDropdown_(dd) {
   try {
     var norm = function (s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
-    var col = dd.getLastRow() >= 2 ? dd.getRange(2, 9, dd.getLastRow() - 1, 1).getValues() : [];
-    var have = {}, last = 0;
-    col.forEach(function (r, i) { if (String(r[0]).trim() !== '') { have[norm(r[0])] = true; last = i + 1; } });
-    var add = [], seen = {};
+    var names = [], seen = {};
     (IM_getEmployees() || []).forEach(function (r) {
-      var n = String(r.Name || '').trim(), k = norm(n);
-      if (!k || String(r.Status) === 'Left' || have[k] || seen[k]) return;
-      seen[k] = true; add.push(n);
+      var n = String(r.Name || '').replace(/\s+/g, ' ').trim(), k = norm(n);
+      if (!k || String(r.Status) === 'Left' || seen[k]) return;
+      seen[k] = true; names.push(n);
     });
-    if (add.length) dd.getRange(last + 2, 9, add.length, 1).setValues(add.map(function (n) { return [n]; }));
-    return add.length;
+    if (!names.length) return 0;
+    names.sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0; });
+    var last = dd.getLastRow();
+    var cur = last >= 2 ? dd.getRange(2, 9, last - 1, 1).getValues().map(function (r) { return String(r[0]).trim(); }) : [];
+    var same = cur.length >= names.length && names.every(function (n, i) { return cur[i] === n; }) && cur.slice(names.length).every(function (v) { return v === ''; });
+    if (!same) {
+      if (last >= 2) dd.getRange(2, 9, last - 1, 1).clearContent();
+      dd.getRange(2, 9, names.length, 1).setValues(names.map(function (n) { return [n]; }));
+    }
+    return names.length;
   } catch (e) { return 0; }
 }
 
