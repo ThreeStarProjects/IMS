@@ -136,6 +136,7 @@ function IM_onOpen_() {
   ui.createMenu('🔗 Interlink')
     .addItem('Refresh dropdowns from Masters', 'IM_refreshDropdowns')
     .addItem('➕ Add employee',                'IM_addEmployeeDialog')
+    .addItem('Send suppliers and job workers to Masters', 'IM_syncPartiesNow')
     .addSeparator()
     .addItem('Process PM reservation requests now', 'IM_processReservationRequestsNow')
     .addSeparator()
@@ -145,6 +146,10 @@ function IM_onOpen_() {
   // Self-heal the PM reservation queue: recreate its trigger if missing, and drain anything waiting.
   try { IM_ensureQueueTrigger_(); IM_processReservationRequests(); } catch (e) {}
   IM_refreshDropdowns(true);  // keep PRJ-### project suggestions current (never throws when quiet)
+  try {                       // Supplier Master / Job Worker Master are a copy of Masters' Parties (an editor also sends rows Masters lacks)
+    var pr = IM_syncPartiesToIms_();
+    if (pr.error || (pr.supplier && pr.supplier.onlyHere.length && pr.linkBlocked) || (pr.jobworker && pr.jobworker.onlyHere.length && pr.linkBlocked)) SpreadsheetApp.getActive().toast(IM_partySummary_(pr), '🔗 Interlink', 12);
+  } catch (e) {}
   try { Masters.registerSystemSheet('ims', SpreadsheetApp.getActive().getId()); } catch (e) {}  // lets PM's project delete find this sheet
 }
 
@@ -196,7 +201,8 @@ function IM_refreshDropdowns(quiet) {
       dd.getRange(2, 11, n, 1).setValues(out);
     }
     var addedEmp = IM_refreshEmployeeDropdown_(dd);
-    if (!quiet) ss.toast((changed ? 'Project list updated from Masters (' + labels.length + ' project(s)).' : 'Projects already up to date.') +
+    var partyMsg = quiet ? '' : IM_partySummary_(IM_syncPartiesToIms_(true));   // manual refresh: suppliers and job workers too
+    if (!quiet) ss.toast((partyMsg ? partyMsg + ' ' : '') +(changed ? 'Project list updated from Masters (' + labels.length + ' project(s)).' : 'Projects already up to date.') +
       (addedEmp ? ' Employee list refreshed from Masters (' + addedEmp + ' people' + (IM_EMP_NEW_.length ? '; new: ' + IM_EMP_NEW_.slice(0, 5).join(', ') + (IM_EMP_NEW_.length > 5 ? ', …' : '') : '') + ').' : ' Employee list not changed (Masters returned no employees).'), '🔗 Interlink', 8);
   } catch (e) {
     if (!quiet) SpreadsheetApp.getUi().alert('Could not refresh projects from Masters', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
@@ -295,4 +301,151 @@ function IM_addEmployeePost_(r, d) {
     if (dd) IM_refreshEmployeeDropdown_(dd);
     return r.name + ' now appears in the employee list (Taken By / Requested By). Payroll: the accountant adds the salary in Finance.';
   } catch (e) { return 'Saved in Masters. The employee list updates the next time IMS is opened.'; }
+}
+
+// -----------------------------------------------------------------------------
+// SUPPLIERS and JOB WORKERS: Masters (Parties) is the master. The IMS sheets 'Supplier Master' and 'Job Worker Master' are kept as a
+// GENERATED COPY (columns A to I), so every form, PO, GRN and job work challan that reads them keeps working unchanged.
+//   * A party's IMS code (SUPP-xxxx / JW-xxxx) is stored in Masters, so old documents stay valid. A party that has no IMS code yet
+//     (added in Masters, or copied from Finance) shows its Masters code (VEND-xxxx) here.
+//   * The copy never deletes a row and never blanks a cell: a row that Masters does not know yet (typed here by hand, or not linked yet) is
+//     left alone, and a Masters party whose NAME equals such a row is not added a second time (it waits to be linked).
+//   * Linking: IMS rows Masters does not know yet are sent to Masters (needs a Masters editor; runs by itself when an editor opens IMS).
+// -----------------------------------------------------------------------------
+var IM_PARTY_KINDS_ = [
+  { kind: 'supplier',  sheet: 'Supplier Master',   flag: { isSupplier: true },  code: 'IMS_Supplier_Code', label: 'supplier' },
+  { kind: 'jobworker', sheet: 'Job Worker Master', flag: { isJobWorker: true }, code: 'IMS_JW_Code',       label: 'job worker' }
+];
+function IM_partyCacheKeys_() { return ['parties_{}', 'parties_{"isSupplier":true}', 'parties_{"isJobWorker":true}'].map(function (k) { return IM_CACHE_KEY + k; }); }
+function IM_partyClearCache_() { IM_partyCacheKeys_().forEach(function (key) { try { CacheService.getScriptCache().remove(key); } catch (e) {} }); }
+function IM_partyTxt_(v) { return String(v == null ? '' : v).trim(); }
+function IM_partyActive_(v) { return v === true || String(v).toLowerCase() === 'true' || String(v).toLowerCase() === 'yes'; }
+function IM_partyNorm_(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+
+/** Rewrites the generated copy of one sheet from Masters. Returns { rows, added, changed, waiting:[names], onlyHere:[names] } or null (sheet missing / Masters returned nobody). */
+function IM_mirrorParties_(k) {
+  var t = IM_partyTxt_, sh = SpreadsheetApp.getActive().getSheetByName(k.sheet);
+  if (!sh) return null;
+  var parties = (IM_getParties(k.flag) || []).filter(function (p) { return t(p.Name); });
+  if (!parties.length) return null;                      // Masters returned nothing: leave the sheet exactly as it is
+  var next = nextRowByCol(sh, 1), cur = next > 2 ? sh.getRange(2, 1, next - 2, 9).getValues() : [];
+  var rowOf = {}; cur.forEach(function (r, i) { if (t(r[0])) rowOf[t(r[0])] = i; });
+  var inMasters = {}, want = [];
+  parties.forEach(function (p) {
+    var code = t(p[k.code]) || t(p.Party_ID);
+    inMasters[code] = true;
+    want.push([code, t(p.Name).replace(/\s+/g, ' '), t(p.Category), t(p.Contact_Person), t(p.Phone), t(p.Email), t(p.GSTIN), t(p.Address), String(p['Active?'] || 'Yes').toLowerCase() !== 'no']);
+  });
+  var hereNames = {}, onlyHere = [];
+  cur.forEach(function (r) { if (t(r[0]) && !inMasters[t(r[0])]) { hereNames[IM_partyNorm_(r[1])] = true; onlyHere.push(t(r[1])); } });
+  var res = { rows: parties.length, added: 0, changed: 0, waiting: [], onlyHere: onlyHere }, add = [];
+  want.forEach(function (w) {
+    var i = rowOf[w[0]];
+    if (i === undefined) {
+      if (hereNames[IM_partyNorm_(w[1])]) { res.waiting.push(w[1]); return; }   // same firm as a row here that is not linked yet: do not add it twice
+      add.push(w); return;
+    }
+    var r = cur[i], diff = false;
+    for (var j = 1; j < 8; j++) { if (w[j] === '') continue; if (t(r[j]) !== w[j]) { r[j] = w[j]; diff = true; } }   // a blank in Masters never blanks a cell here
+    if (IM_partyActive_(r[8]) !== w[8]) { r[8] = w[8]; diff = true; }
+    if (diff) res.changed++;
+  });
+  if (res.changed) sh.getRange(2, 1, cur.length, 9).setValues(cur);
+  if (add.length) { sh.getRange(next, 1, add.length, 9).setValues(add); res.added = add.length; }
+  try { if (!sh.getRange('A1').getNote()) sh.getRange('A1').setNote('Kept in step with Masters (Parties) automatically. Add or change ' + k.label + 's with the IMS forms or in Masters: a change typed straight into this sheet is overwritten the next time Masters is read.'); } catch (e) {}
+  return res;
+}
+
+/** Sends the rows of one sheet that Masters does not know yet (by IMS code or Masters code) to Masters. Returns { sent, blocked, error }. */
+function IM_linkPartyRows_(k) {
+  var t = IM_partyTxt_, sh = SpreadsheetApp.getActive().getSheetByName(k.sheet), out = { sent: 0 };
+  if (!sh) return out;
+  var known = {}; (IM_getParties(k.flag) || []).forEach(function (p) { if (t(p[k.code])) known[t(p[k.code])] = true; known[t(p.Party_ID)] = true; });
+  var next = nextRowByCol(sh, 1); if (next <= 2) return out;
+  var list = sh.getRange(2, 1, next - 2, 9).getValues().filter(function (r) { return t(r[0]) && t(r[1]) && !known[t(r[0])]; })
+    .map(function (r) { return { code: t(r[0]), name: t(r[1]), category: t(r[2]), contact: t(r[3]), phone: t(r[4]), email: t(r[5]), gstin: t(r[6]), address: t(r[7]), active: IM_partyActive_(r[8]) }; });
+  if (!list.length) return out;
+  try {
+    var r2, n = 0;
+    do { r2 = Masters.syncPartiesFromIms(k.kind, list, 20); n++; } while (r2.more && n < 6);
+    out.sent = list.length; out.more = r2.more;
+    IM_partyClearCache_();
+  } catch (e) { out.blocked = true; out.error = /Editors only|Admin only|permission|access/i.test(String(e && e.message)) ? 'only Masters editors can send suppliers and job workers' : String(e && e.message); }
+  return out;
+}
+
+/**
+ * Link (editors) then copy, for both sheets, under the document lock (a second person opening IMS at the same time just skips it).
+ * Returns { supplier, jobworker, sent, linkBlocked, error }, each of supplier / jobworker being the copy result; never throws.
+ */
+function IM_syncPartiesToIms_(fresh) {
+  var out = { linkBlocked: '', sent: 0 }, lock = LockService.getDocumentLock();
+  try { if (!lock.tryLock(8000)) return out; } catch (e) { return out; }
+  try {
+    if (fresh) IM_partyClearCache_();
+    IM_PARTY_KINDS_.forEach(function (k) {
+      try {
+        var l = IM_linkPartyRows_(k);
+        if (l.blocked) out.linkBlocked = l.error; else out.sent += l.sent;
+        out[k.kind] = IM_mirrorParties_(k);
+      } catch (e) { out[k.kind] = null; out.error = String((e && e.message) || e); }
+    });
+  } finally { try { lock.releaseLock(); } catch (e) {} }
+  return out;
+}
+
+/** Plain-words summary of IM_syncPartiesToIms_ ('' when there is nothing to say). */
+function IM_partySummary_(r) {
+  var one = function (x, label) { return x ? x.rows + ' ' + label + (x.added || x.changed ? ' (' + (x.added ? x.added + ' added' : '') + (x.added && x.changed ? ', ' : '') + (x.changed ? x.changed + ' updated' : '') + ')' : '') : ''; };
+  var parts = [one(r.supplier, 'suppliers'), one(r.jobworker, 'job workers')].filter(String);
+  var s = r.supplier, j = r.jobworker;
+  var only = (s ? s.onlyHere.length : 0) + (j ? j.onlyHere.length : 0), wait = (s ? s.waiting.length : 0) + (j ? j.waiting.length : 0);
+  var msg = parts.length ? 'Suppliers and job workers, from Masters: ' + parts.join(', ') + '.' : '';
+  if (only) msg += ' ' + only + ' row(s) exist only in IMS' + (r.linkBlocked ? ': a Masters editor must open IMS (or use 🔗 Interlink → Send suppliers and job workers to Masters) to add them to Masters.' : ' (sent to Masters just now).');
+  else if (wait) msg += ' ' + wait + ' Masters party(ies) wait to be linked to an IMS row of the same name.';
+  if (r.error) msg += ' Problem: ' + r.error;
+  return msg.trim();
+}
+
+/** Menu: 🔗 Send suppliers and job workers to Masters (and copy Masters back). */
+function IM_syncPartiesNow() {
+  var r = IM_syncPartiesToIms_(true);
+  SpreadsheetApp.getActive().toast(IM_partySummary_(r) || (r.linkBlocked ? 'Not sent: ' + r.linkBlocked : 'Suppliers and job workers are already in step with Masters.'), '🔗 Interlink', 12);
+}
+
+/**
+ * Called by the Add / Edit supplier and job worker forms. Writes to Masters (the master) and refreshes the sheet copy.
+ * kind: 'supplier' | 'jobworker'. Returns { ok, code, message } or { ok:false, notInMasters:true } (edit of a row Masters does not know yet). Never throws.
+ */
+function IM_partyFromForm_(kind, code, d, isEdit) {
+  var k = IM_PARTY_KINDS_.filter(function (x) { return x.kind === kind; })[0], t = IM_partyTxt_;
+  try {
+    var cat = kind === 'jobworker' ? d.processType : d.category;
+    var res;
+    if (isEdit) {
+      IM_partyClearCache_();
+      var p = (IM_getParties(k.flag) || []).filter(function (x) { return t(x[k.code]) === code || t(x.Party_ID) === code; })[0];
+      if (!p) return { ok: false, notInMasters: true };
+      var upd = {};
+      if (d.firmName !== undefined) upd.Name = t(d.firmName);
+      if (cat !== undefined) upd.Category = t(cat);
+      if (d.contact !== undefined) upd.Contact_Person = t(d.contact);
+      if (d.mobile !== undefined) upd.Phone = t(d.mobile);
+      if (d.email !== undefined) upd.Email = t(d.email);
+      if (d.gst !== undefined) upd.GSTIN = t(d.gst);
+      if (d.address !== undefined) upd.Address = t(d.address);
+      if (d.active !== undefined) upd['Active?'] = d.active ? 'Yes' : 'No';
+      Masters.updateParty(p.Party_ID, upd);
+      res = { ok: true, id: p.Party_ID };
+    } else {
+      res = Masters.addPartyChecked({ Name: t(d.firmName), role: kind, code: code, Category: t(cat), Contact_Person: t(d.contact), Phone: t(d.mobile), Email: t(d.email), GSTIN: t(d.gst), Address: t(d.address) });
+      if (!res.ok) return { ok: false, message: res.duplicate ? res.duplicate.name + ' is already in Masters as a ' + k.label + ' (' + res.duplicate.id + '). Nothing was added; it is in the list already.' : 'Could not add.' };
+    }
+    var s = IM_syncPartiesToIms_(true);
+    var now = (IM_getParties(k.flag) || []).filter(function (x) { return x.Party_ID === res.id; })[0];
+    return { ok: true, code: now ? (t(now[k.code]) || t(now.Party_ID)) : (code || res.id), message: s.error || '' };
+  } catch (e) {
+    var m = String((e && e.message) || e);
+    return { ok: false, message: /Editors only|Admin only|permission|access/i.test(m) ? 'Only Masters editors can add or change suppliers and job workers. Ask the administrator to add you as an editor, or ask them to do it.' : m };
+  }
 }
