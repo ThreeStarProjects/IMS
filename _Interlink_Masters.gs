@@ -165,6 +165,7 @@ function IM_refreshDropdowns(quiet) {
     var dd = ss.getSheetByName('Dropdowns');
     if (!dd) return;
     if (!quiet) CacheService.getScriptCache().remove(IM_CACHE_KEY + 'projects');  // manual refresh: skip the 5-min cache
+    CacheService.getScriptCache().remove(IM_CACHE_KEY + 'employees');              // people are always read fresh: someone added in Masters a minute ago must show up now
 
     var col = dd.getLastRow() >= 2 ? dd.getRange(2, 11, dd.getLastRow() - 1, 1).getValues() : [];
     var LABEL = /^PRJ-\d+ — /;
@@ -184,7 +185,7 @@ function IM_refreshDropdowns(quiet) {
     }
     var addedEmp = IM_refreshEmployeeDropdown_(dd);
     if (!quiet) ss.toast((changed ? 'Project list updated from Masters (' + labels.length + ' project(s)).' : 'Projects already up to date.') +
-      (addedEmp ? ' Employee list refreshed from Masters (' + addedEmp + ' people).' : ' Employee list not changed (Masters returned no employees).'), '🔗 Interlink', 6);
+      (addedEmp ? ' Employee list refreshed from Masters (' + addedEmp + ' people' + (IM_EMP_NEW_.length ? '; new: ' + IM_EMP_NEW_.slice(0, 5).join(', ') + (IM_EMP_NEW_.length > 5 ? ', …' : '') : '') + ').' : ' Employee list not changed (Masters returned no employees).'), '🔗 Interlink', 8);
   } catch (e) {
     if (!quiet) SpreadsheetApp.getUi().alert('Could not refresh projects from Masters', e.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
@@ -229,7 +230,9 @@ function IM_showStartHere() {
  * Names not active in Masters disappear from it (requisitions already saved keep their text). If Masters cannot be read, or returns
  * nobody, the column is left exactly as it is. Returns how many names are in the list now; 0 when nothing was done.
  */
+var IM_EMP_NEW_ = [];   // names that were not in the column before the last refresh (for the toast)
 function IM_refreshEmployeeDropdown_(dd) {
+  IM_EMP_NEW_ = [];
   try {
     var norm = function (s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
     var names = [], seen = {};
@@ -242,6 +245,8 @@ function IM_refreshEmployeeDropdown_(dd) {
     names.sort(function (a, b) { return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0; });
     var last = dd.getLastRow();
     var cur = last >= 2 ? dd.getRange(2, 9, last - 1, 1).getValues().map(function (r) { return String(r[0]).trim(); }) : [];
+    var had = {}; cur.forEach(function (v) { if (v) had[norm(v)] = true; });
+    IM_EMP_NEW_ = names.filter(function (n) { return !had[norm(n)]; });
     var same = cur.length >= names.length && names.every(function (n, i) { return cur[i] === n; }) && cur.slice(names.length).every(function (v) { return v === ''; });
     if (!same) {
       if (last >= 2) dd.getRange(2, 9, last - 1, 1).clearContent();
