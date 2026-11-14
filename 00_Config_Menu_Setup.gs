@@ -972,6 +972,7 @@ function getFormBootstrap(formId) {
       processTypes:  _safe(function() { return _colValues(ss, 'Dropdowns', 7); }, []),
       employees:     _safe(function() { return _colValues(ss, 'Dropdowns', 9); }, []),
       projects:      _safe(function() { return _colValues(ss, 'Dropdowns', 11).concat(_splitCsv(getConfig('Project List'))); }, []),
+      customers:     formId === 'form-add-fg-delivery' ? _safe(function() { return IM_customerPicks_(); }, []) : [],   // Finance's customers, copied to Masters
       lastProject:   _safe(function() { return PropertiesService.getUserProperties().getProperty('IM_LAST_REQ_PROJECT') || ''; }, ''),
       items:         _safe(function() { return _codeDescUom(ss, 'Item Master', 1, 3, 7, 19); }, []),
       sfgs:          _safe(function() { return _codeDescUom(ss, 'SFG Master',  1, 3, 7, 11); }, []),

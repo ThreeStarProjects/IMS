@@ -661,7 +661,7 @@
     </div>
     <div class="fg"><label class="req">Date</label><input id="afgd-date" type="date"></div>
     <div class="fg"><label>DC No (leave blank to auto-generate)</label><input id="afgd-manual-dcno" type="text" placeholder="e.g., 3SP/DC/26-27/12"></div>
-    <div class="fg"><label class="req" id="afgd-customer-label">Customer Name</label><input id="afgd-customer" type="text" placeholder="e.g., NEURON ENERGY PVT LTD"></div>
+    <div class="fg"><label class="req" id="afgd-customer-label">Customer Name</label><input id="afgd-customer" type="text" list="customer-list" placeholder="pick from the list, or type" onchange="onFgdCustomerPick()" autocomplete="off"><datalist id="customer-list"></datalist></div>
     <div class="fg"><label>Project</label><input id="afgd-project" type="text" list="project-list"></div>
     <div class="fg afgd-cust-only"><label>Payment Terms</label><input id="afgd-payment" type="text" placeholder="e.g., 50% advance, 50% on delivery"></div>
     <div class="fg afgd-cust-only"><label>Other Reference(s)</label><input id="afgd-otherref" type="text" placeholder="PO ref, quote no, etc."></div>
@@ -1391,6 +1391,7 @@ function populateDropdowns(formId, data) {
   }
   _fillDatalist('project-list',  data.projects);
   _fillDatalist('employee-list', data.employees);
+  _fillDatalist('customer-list', (data.customers || []).map(function(c) { return c.name; }));
   // requisition form: offer the project used last time (only when the box is still empty)
   if (data.lastProject) { const _lp = document.getElementById('areq-project'); if (_lp && !_lp.value) _lp.value = data.lastProject; }
   // supplier datalist for multi-supplier input (use label so user sees name)
@@ -3178,6 +3179,20 @@ function onFgdSameAsBill() {
   }
 }
 
+// A customer picked from the list fills Bill To (address + GSTIN), Ship To and Payment Terms, only into boxes that are still empty.
+function onFgdCustomerPick() {
+  if (document.getElementById('afgd-type').value === 'Internal') return;
+  const typed = document.getElementById('afgd-customer').value.trim().toLowerCase();
+  const list = (window._IMS && window._IMS.customers) || [];
+  const c = list.filter(function(x) { return x.name.toLowerCase() === typed; })[0];
+  if (!c) return;
+  function fill(id, val) { const el = document.getElementById(id); if (el && val && !el.value.trim()) el.value = val; }
+  fill('afgd-billto', c.bill); fill('afgd-billto-gstin', c.gstin);
+  fill('afgd-shipto', c.ship); fill('afgd-shipto-gstin', c.ship ? c.gstin : '');
+  fill('afgd-payment', c.terms ? c.terms + ' days' : '');
+  if (document.getElementById('afgd-samebill').checked) onFgdSameAsBill();
+}
+
 // Toggle Customer vs Internal Site fields based on type dropdown
 function onFgdTypeChange() {
   const type = document.getElementById('afgd-type').value;
@@ -3186,6 +3201,7 @@ function onFgdTypeChange() {
     el.style.display = isInternal ? 'none' : '';
   });
   document.getElementById('afgd-customer-label').textContent = isInternal ? 'Site / Project Name' : 'Customer Name';
+  if (isInternal) document.getElementById('afgd-customer').removeAttribute('list'); else document.getElementById('afgd-customer').setAttribute('list', 'customer-list');
 }
 
 function submitFgDelivery() {

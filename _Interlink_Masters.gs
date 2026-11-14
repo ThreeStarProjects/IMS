@@ -61,6 +61,18 @@ function IM_asLabels_(rows, idCol, nameCol) {
     .map(function (r) { return r[idCol] + ' — ' + r[nameCol]; });
 }
 
+/**
+ * Customers for the delivery-challan picker: active ones, A to Z, with the details that fill Bill To / Ship To.
+ * Finance is the master for customers (Masters holds a copy), so this only lists; typing a new name is still allowed.
+ */
+function IM_customerPicks_() {
+  var t = function (v) { return String(v == null ? '' : v).trim(); };
+  return (IM_getCustomers() || [])
+    .filter(function (r) { return t(r.Name) && String(r['Active?'] || 'Yes').toLowerCase() !== 'no'; })
+    .map(function (r) { return { name: t(r.Name), legal: t(r.Legal_Name), gstin: t(r.GSTIN), bill: t(r.Billing_Address), ship: t(r.Shipping_Address), terms: t(r.Payment_Terms_Days) }; })
+    .sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0; });
+}
+
 // Just the IDs (for lookups where you don't want the label)
 function IM_projectIds()  { return IM_getProjects().map(function (r)  { return r.Project_ID;  }); }
 function IM_customerIds() { return IM_getCustomers().map(function (r) { return r.Customer_ID; }); }
