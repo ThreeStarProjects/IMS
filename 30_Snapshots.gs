@@ -1951,9 +1951,3 @@ function _fetchRegisterRowsCustom(ss, sheetName, codeCol, value, transform) {
   return out;
 }
 
-// Convenience: project 1-indexed columns from matching rows (thin wrapper).
-function _fetchRegisterRows(ss, sheetName, codeCol, value, projectCols) {
-  return _fetchRegisterRowsCustom(ss, sheetName, codeCol, value, function(r) {
-    return projectCols.map(function(c) { return r[c - 1]; });
-  });
-}

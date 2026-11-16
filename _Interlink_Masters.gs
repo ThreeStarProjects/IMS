@@ -28,8 +28,6 @@ var IM_CACHE_KEY  = 'IM_v' + IM_VERSION + '_';
 function IM_getProjects()  { return IM_cache_('projects',  function () { return Masters.getProjects(); }); }
 function IM_getCustomers() { return IM_cache_('customers', function () { return Masters.getCustomers(); }); }
 function IM_getEmployees() { return IM_cache_('employees', function () { return Masters.getEmployees(); }); }
-function IM_getSites()     { return IM_cache_('sites',     function () { return Masters.getSites(); }); }
-
 /**
  * Parties with role flags. Call with a flag object to narrow:
  *   IM_getParties({ isSupplier:  true })  → suppliers only
@@ -41,20 +39,10 @@ function IM_getParties(filter) {
   return IM_cache_(key, function () { return Masters.getParties(filter || {}); });
 }
 
-/** Freeform name → Masters record. For migration-time resolution. */
-function IM_resolveName(entity, text) {
-  return Masters.resolveFreeformName(entity, text);
-}
-
 // -----------------------------------------------------------------------------
 // Dropdown-friendly label lists — "{ID} — {Name}"
 // -----------------------------------------------------------------------------
 function IM_projectLabels()  { return IM_asLabels_(IM_getProjects(),  'Project_ID',  'Name'); }
-function IM_customerLabels() { return IM_asLabels_(IM_getCustomers(), 'Customer_ID', 'Name'); }
-function IM_partyLabels(f)   { return IM_asLabels_(IM_getParties(f),  'Party_ID',    'Name'); }
-function IM_employeeLabels() { return IM_asLabels_(IM_getEmployees(), 'Emp_ID',      'Name'); }
-function IM_siteLabels()     { return IM_asLabels_(IM_getSites(),     'Site_ID',     'Name'); }
-
 function IM_asLabels_(rows, idCol, nameCol) {
   return (rows || [])
     .filter(function (r) { return String(r['Active?'] || 'Yes').toLowerCase() !== 'no'; })
@@ -72,10 +60,6 @@ function IM_customerPicks_() {
     .map(function (r) { return { name: t(r.Name), legal: t(r.Legal_Name), gstin: t(r.GSTIN), bill: t(r.Billing_Address), ship: t(r.Shipping_Address), terms: t(r.Payment_Terms_Days) }; })
     .sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0; });
 }
-
-// Just the IDs (for lookups where you don't want the label)
-function IM_projectIds()  { return IM_getProjects().map(function (r)  { return r.Project_ID;  }); }
-function IM_customerIds() { return IM_getCustomers().map(function (r) { return r.Customer_ID; }); }
 
 // -----------------------------------------------------------------------------
 // Cache plumbing

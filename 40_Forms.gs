@@ -942,40 +942,6 @@ function addPoMultiLine(d) {
   }
 }
 
-// Return current PHYSICAL stock for a code (RM/SFG/FG). Used by Add Adjustment
-// UI to show "what's on the shelf right now". Physical = Available + Reserved
-// (RM/FG) OR On Hand (SFG — physical at warehouse, excludes JW-out).
-function getPhysicalStock(code) {
-  try {
-    if (!code) throw new Error('Code required');
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const snap = ss.getSheetByName('Stock Snapshot');
-    if (!snap) throw new Error('Stock Snapshot missing');
-    // RM: Available (idx 8) + Reserved (idx 9)
-    const rm = _readRmSection(snap, 10);
-    for (let i = 0; i < rm.length; i++) {
-      if (rm[i][0] === code) return { success: true, code: code, physical: (Number(rm[i][8]) || 0) + (Number(rm[i][9]) || 0), uom: '' };
-    }
-    // SFG: On Hand (idx 3) is physical at warehouse
-    const sfg = _readSfgSection(snap, 4);
-    for (let j = 0; j < sfg.length; j++) {
-      if (sfg[j][0] === code) return { success: true, code: code, physical: Number(sfg[j][3]) || 0, uom: '' };
-    }
-    // FG: Available (K) + active reservations
-    const fgSh = ss.getSheetByName('FG Master');
-    if (fgSh && fgSh.getLastRow() >= 2) {
-      const fd = fgSh.getRange(2, 1, fgSh.getLastRow() - 1, 11).getValues();
-      const resMap = _aggregateReservations(ss);
-      for (let k = 0; k < fd.length; k++) {
-        if (fd[k][0] === code) return { success: true, code: code, physical: (Number(fd[k][10]) || 0) + (Number(resMap[code]) || 0), uom: '' };
-      }
-    }
-    return { success: false, message: 'Not found in Snapshot', physical: 0, uom: '' };
-  } catch (e) {
-    return { success: false, message: e.message, physical: 0, uom: '' };
-  }
-}
-
 function addAdjustment(d) {
   try {
     _require(d, ['date', 'type', 'code', 'qty']);
@@ -992,20 +958,6 @@ function addAdjustment(d) {
 // ============================================================================
 // BULK ADJUSTMENTS — post multiple adjustments in one submission
 // ============================================================================
-
-// Returns current on-hand for a code from Stock Snapshot.
-// Vertical layout: RM at rows 2..(sfgHdr-2), SFG at (sfgHdr+1)..end.
-// Both sections have code in col A; RM On Hand at col I (idx 8), SFG On Hand at col D (idx 3).
-function getOnHandForCode(code) {
-  if (!code) return null;
-  const snap = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Stock Snapshot');
-  if (!snap || snap.getLastRow() < 2) return 0;
-  const rm = _readRmSection(snap, 9);
-  for (let i = 0; i < rm.length; i++) if (rm[i][0] === code) return Number(rm[i][8]) || 0;
-  const sfg = _readSfgSection(snap, 4);
-  for (let i = 0; i < sfg.length; i++) if (sfg[i][0] === code) return Number(sfg[i][3]) || 0;
-  return 0;
-}
 
 // Physical count reconciliation. Each line provides `targetQty` (what the
 // physical count shows). Server looks up current on-hand from Stock Snapshot,

@@ -546,26 +546,6 @@ function _seedDropdowns(ss) {
 // (Categories etc.) and never removes a unit. Safe to run more than once.
 const IM_PM_UNITS = ['Sq.ft', 'Sq.m', 'Pcs', 'Box', 'Roll', 'Kg', 'Meter', 'Set', 'Other'];
 
-function IM_applyUnitList() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const dd = ss.getSheetByName('Dropdowns');
-  if (!dd) { toast('Dropdowns sheet not found.'); return; }
-
-  const have = dd.getRange(2, 5, Math.max(dd.getLastRow() - 1, 1), 1).getValues()
-    .map(function(r) { return r[0]; }).filter(String);
-  const add = IM_PM_UNITS.filter(function(u) { return have.indexOf(u) < 0; });
-  if (add.length) dd.getRange(have.length + 2, 5, add.length, 1).setValues(add.map(function(u) { return [u]; }));
-
-  const n = have.length + add.length;
-  const done = [];
-  ['Item Master', 'SFG Master', 'FG Master'].forEach(function(name) {
-    const sh = ss.getSheetByName(name);
-    const col = sh ? _colByHeader(sh, 'UOM') : -1;
-    if (col > 0) { _dv(sh, 2, col, 500, 1, dd.getRange(2, 5, n, 1)); done.push(name); }
-  });
-  toast('Units list: ' + n + ' entries (' + add.length + ' added). UOM dropdown updated on: ' + done.join(', '), '3 Star IMS', 10);
-}
-
 // Locate a column by its header text — future-proof against column inserts.
 // Returns 1-based col index, or -1 if not found.
 function _colByHeader(sh, headerText) {

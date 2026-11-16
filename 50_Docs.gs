@@ -953,11 +953,6 @@ function generateFgDeliveryPdf(dcNo, formData, allLines) {
   }, dcNo, 'FGDelivery');
 }
 
-function clearLogoCache() {
-  PropertiesService.getScriptProperties().deleteAllProperties();
-  toast('Logo cache cleared. Next PDF will re-fetch.');
-}
-
 // Bump the cache epoch — every existing image cache key becomes unreachable so
 // the next PDF re-fetches all photos fresh. Use after fixing a wrong photo in
 // Item Master or when a PDF shows a stale/incorrect image.
