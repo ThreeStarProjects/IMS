@@ -328,7 +328,7 @@ function IM_processSelfTestCommands_() {
 /**
  * Commands PM leaves in the hidden sheet _PM_Commands (A Id | B Action | C Params JSON | D Status | E Result JSON |
  * F By | G At), run here in IMS's own context from the 1-minute trigger, after the reservation queue released its lock
- * (addItem numbers the item under the same document lock). The ONLY action is "addItem": the real addItem(d), so the
+ * (addItem numbers the item under the same document lock). Actions: "addItem" (the real addItem(d), so the
  * dropdown checks, duplicate detection and item-code numbering are exactly those of the IMS form.
  * Status becomes Done (the Result says whether the item was created or why not) or Error (the command itself was bad).
  */
@@ -340,11 +340,24 @@ function IM_processPmCommands_() {
     if (r[3] !== 'Pending') return;
     var status = 'Done', result;
     try {
-      if (r[1] !== 'addItem') throw new Error('Unknown action: ' + r[1]);
-      result = addItem(JSON.parse(r[2]));
+      var par = JSON.parse(r[2]);
+      if (r[1] === 'addItem') result = addItem(par);
+      else if (r[1] === 'addSupplier') result = IM_addSupplierFromPm_(par);
+      else throw new Error('Unknown action: ' + r[1]);
     } catch (e) { status = 'Error'; result = { success: false, message: e.message }; }
     sh.getRange(i + 2, 4, 1, 2).setValues([[status, JSON.stringify(result)]]);
     done++;
   });
   return done;
+}
+
+/** PM's "Add supplier": the real addSupplier(d) of the IMS form, plus a refusal of a name that is already in Supplier Master (unless forceCreate). */
+function IM_addSupplierFromPm_(d) {
+  var norm = function (x) { return String(x == null ? '' : x).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+  var sh = SpreadsheetApp.getActive().getSheetByName('Supplier Master');
+  if (sh && d.forceCreate !== true && sh.getLastRow() >= 2) {
+    var hit = sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().filter(function (r) { return norm(r[1]) === norm(d.firmName); })[0];
+    if (hit) return { success: false, duplicate: true, existingCode: hit[0], message: hit[1] + ' is already in Supplier Master as ' + hit[0] + '.' };
+  }
+  return addSupplier(d);
 }
