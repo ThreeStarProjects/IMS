@@ -110,9 +110,53 @@ function _logoDataUrl() { return _driveImageDataUrl(_docCfg_('Company Logo URL')
 //   2. Any other https URL → UrlFetchApp (works for Cloudinary, S3, CDN, etc.)
 // Cached in CacheService (100KB per value, 6hr TTL) so multi-line PDFs
 // don't re-fetch the same image N times.
+var _IMG_MEM = {};      // images already fetched in this run (also holds the ones too big for the cache)
+var _IMG_MS = 0;        // time spent fetching images in this run (for the timing record)
+var _RUN_T0 = Date.now();   // when this run started (the form save that leads to the PDF)
+
+function _imgCacheKey_(trimmed) {
+  const epoch = PropertiesService.getScriptProperties().getProperty('_photoCacheEpoch') || '0';
+  return 'img_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, epoch + '|' + trimmed));
+}
+
+/**
+ * Fetches all the given images AT THE SAME TIME (a 12-line RFQ used to download 12 photos one after another).
+ * Anything that fails here is simply fetched the old way, one by one, by _driveImageDataUrl.
+ */
+function _prefetchImages_(urls) {
+  const t0 = Date.now();
+  try {
+    const cache = CacheService.getScriptCache(), todo = [], seen = {};
+    (urls || []).forEach(function (u) {
+      const t = String(u || '').trim();
+      if (!t || seen[t] || _IMG_MEM[t]) return; seen[t] = true;
+      const hit = cache.get(_imgCacheKey_(t));
+      if (hit) { _IMG_MEM[t] = hit; return; }
+      const id = _extractDriveId(t);
+      if (id) todo.push({ t: t, req: { url: 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(id) + '&sz=w600', headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true, followRedirects: true } });
+      else if (/^https?:\/\//i.test(t)) todo.push({ t: t, req: { url: t, muteHttpExceptions: true, followRedirects: true } });
+    });
+    if (!todo.length) return;
+    UrlFetchApp.fetchAll(todo.map(function (x) { return x.req; })).forEach(function (res, i) {
+      try {
+        const blob = res.getBlob(), mime = String(blob.getContentType() || '');
+        if (res.getResponseCode() !== 200 || !/^image\//i.test(mime)) return;
+        const dataUrl = 'data:' + mime + ';base64,' + Utilities.base64Encode(blob.getBytes());
+        _IMG_MEM[todo[i].t] = dataUrl;
+        if (dataUrl.length < 100000) cache.put(_imgCacheKey_(todo[i].t), dataUrl, 21600);
+      } catch (e) {}
+    });
+  } catch (e) {} finally { _IMG_MS += Date.now() - t0; }
+}
+
 function _driveImageDataUrl(url) {
   if (!url) return '';
   const trimmed = String(url).trim();
+  if (_IMG_MEM[trimmed]) return _IMG_MEM[trimmed];
+  const _t0 = Date.now();
+  try { return (_IMG_MEM[trimmed] = _driveImageDataUrlSlow_(trimmed)); } finally { _IMG_MS += Date.now() - _t0; }
+}
+function _driveImageDataUrlSlow_(trimmed) {
   const cache = CacheService.getScriptCache();
   // Cache key must be a proper hash of the FULL URL. Previously used
   // base64(url).substr(0,60) — that's just truncated encoding, not a hash. Every
@@ -520,12 +564,28 @@ function savePdfToDrive(html, docNo, docType) {
   const t2 = Date.now();
   const file = monthFolder.createFile(pdfBlob);
   const id = file.getId();
-  console.log('PDF ' + docType + ' ' + docNo + ': folder ' + (t1 - t0) + ' ms, convert ' + (t2 - t1) + ' ms (' + Math.round(html.length / 1024) + ' KB html), save ' + (Date.now() - t2) + ' ms');
+  const t3 = Date.now();
+  console.log('PDF ' + docType + ' ' + docNo + ': folder ' + (t1 - t0) + ' ms, convert ' + (t2 - t1) + ' ms (' + Math.round(html.length / 1024) + ' KB html), save ' + (t3 - t2) + ' ms');
+  _pdfTimingRow_([now, docType, docNo, t0 - _RUN_T0, _IMG_MS, t1 - t0, t2 - t1, t3 - t2, Math.round(html.length / 1024), t3 - _RUN_T0]);
   return {
     url: file.getUrl(),
     fileId: id,
     downloadUrl: 'https://drive.google.com/uc?export=download&id=' + id,
   };
+}
+
+// ponytail: temporary measuring aid. One row per PDF in the hidden sheet _PDF_Timing so the slow step can be seen without opening
+// the execution log. Remove this function and its one call once PDF speed is settled. Never lets a PDF fail.
+function _pdfTimingRow_(row) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sh = ss.getSheetByName('_PDF_Timing');
+    if (!sh) {
+      sh = ss.insertSheet('_PDF_Timing'); sh.hideSheet();
+      sh.appendRow(['At', 'Type', 'Doc No', 'Before PDF ms (form save, stock, lookups)', 'Images ms', 'Drive folder ms', 'Convert to PDF ms', 'Save file ms', 'Document size KB', 'Total ms until PDF saved']);
+    }
+    sh.appendRow(row);
+  } catch (e) {}
 }
 
 function _getOrCreateFolder(parent, name) {
@@ -873,6 +933,7 @@ function _renderAndSave(docSpec, docNo, docType) {
 function generateRfqPdf(rfqNo, formData, lineRows) {
   const cols = ['#','PHOTO','ITEM CODE','DESCRIPTION','SIZE','COLOUR','UOM','QTY REQUIRED','REMARKS'];
   let sumQty = 0;
+  _prefetchImages_(lineRows.map(function(l) { return l.photoUrl; }).concat(_docCfg_('Company Logo URL')));   // all photos + logo in one go
   const rows = lineRows.map(function(l, i) {
     sumQty += Number(l.qty) || 0;
     return [
