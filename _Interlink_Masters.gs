@@ -137,6 +137,7 @@ function IM_onOpen_() {
     .addItem('Refresh dropdowns from Masters', 'IM_refreshDropdowns')
     .addItem('➕ Add employee',                'IM_addEmployeeDialog')
     .addItem('Send suppliers and job workers to Masters', 'IM_syncPartiesNow')
+    .addItem('Remove Finance-only vendors from supplier list', 'IM_retireFinanceVendorsNow')
     .addSeparator()
     .addItem('Process PM reservation requests now', 'IM_processReservationRequestsNow')
     .addSeparator()
@@ -337,21 +338,17 @@ function IM_mirrorParties_(k) {
   if (!sh) return null;
   var all = (IM_getParties(k.flag) || []).filter(function (p) { return t(p.Name); });
   if (!all.length) return null;                          // Masters returned nothing: leave the sheet exactly as it is
-  // A party copied from Finance only (has a Finance code, never an IMS code) is an accounts vendor, not an IMS supplier: not listed here.
-  // To list one in IMS, give it an IMS code in Masters (or add it through the IMS form).
-  var parties = all.filter(function (p) { return t(p[k.code]) || !t(p.Finance_ID); });
-  var hidden = {}; all.forEach(function (p) { if (!(t(p[k.code]) || !t(p.Finance_ID))) hidden[t(p.Party_ID)] = true; });
+  var parties = all;
   var next = nextRowByCol(sh, 1), cur = next > 2 ? sh.getRange(2, 1, next - 2, 9).getValues() : [];
   var rowOf = {}; cur.forEach(function (r, i) { if (t(r[0])) rowOf[t(r[0])] = i; });
   var inMasters = {}, want = [];
-  Object.keys(hidden).forEach(function (c) { inMasters[c] = true; });   // known to Masters, just not listed here
   parties.forEach(function (p) {
     var code = t(p[k.code]) || t(p.Party_ID);
     inMasters[code] = true;
     want.push([code, t(p.Name).replace(/\s+/g, ' '), t(p.Category), t(p.Contact_Person), t(p.Phone), t(p.Email), t(p.GSTIN), t(p.Address), String(p['Active?'] || 'Yes').toLowerCase() !== 'no']);
   });
   var hereNames = {}, onlyHere = [];
-  cur.forEach(function (r) { if (t(r[0]) && !inMasters[t(r[0])]) { hereNames[IM_partyNorm_(r[1])] = true; onlyHere.push(t(r[1])); } });
+  cur.forEach(function (r) { if (t(r[0]) && !inMasters[t(r[0])] && !/^VEND-\d+$/.test(t(r[0]))) { hereNames[IM_partyNorm_(r[1])] = true; onlyHere.push(t(r[1])); } });
   var res = { rows: parties.length, added: 0, changed: 0, waiting: [], onlyHere: onlyHere }, add = [];
   want.forEach(function (w) {
     var i = rowOf[w[0]];
@@ -364,10 +361,10 @@ function IM_mirrorParties_(k) {
     if (IM_partyActive_(r[8]) !== w[8]) { r[8] = w[8]; diff = true; }
     if (diff) res.changed++;
   });
-  // rows an earlier copy appended for Finance-only vendors are removed again, unless a document already uses the code
+  // VEND- rows whose party is no longer a supplier in Masters (Finance-only vendors taken off the list) are removed, unless a document uses the code
   res.removed = 0;
   var drop = [];
-  cur.forEach(function (r, i) { var c = t(r[0]); if (hidden[c] && !IM_partyCodeUsed_(c)) drop.push(i); });
+  cur.forEach(function (r, i) { var c = t(r[0]); if (/^VEND-\d+$/.test(c) && !inMasters[c] && !IM_partyCodeUsed_(c)) drop.push(i); });
   if (res.changed) sh.getRange(2, 1, cur.length, 9).setValues(cur);
   drop.reverse().forEach(function (i) { sh.deleteRow(i + 2); res.removed++; });
   if (drop.length) next -= drop.length;
@@ -382,7 +379,7 @@ function IM_linkPartyRows_(k) {
   if (!sh) return out;
   var known = {}; (IM_getParties(k.flag) || []).forEach(function (p) { if (t(p[k.code])) known[t(p[k.code])] = true; known[t(p.Party_ID)] = true; });
   var next = nextRowByCol(sh, 1); if (next <= 2) return out;
-  var list = sh.getRange(2, 1, next - 2, 9).getValues().filter(function (r) { return t(r[0]) && t(r[1]) && !known[t(r[0])]; })
+  var list = sh.getRange(2, 1, next - 2, 9).getValues().filter(function (r) { return t(r[0]) && t(r[1]) && !known[t(r[0])] && !/^VEND-\d+$/.test(t(r[0])); })   // VEND- rows are Masters' own codes: never sent back
     .map(function (r) { return { code: t(r[0]), name: t(r[1]), category: t(r[2]), contact: t(r[3]), phone: t(r[4]), email: t(r[5]), gstin: t(r[6]), address: t(r[7]), active: IM_partyActive_(r[8]) }; });
   if (!list.length) return out;
   try {
@@ -425,6 +422,20 @@ function IM_partySummary_(r) {
   else if (wait) msg += ' ' + wait + ' Masters party(ies) wait to be linked to an IMS row of the same name.';
   if (r.error) msg += ' Problem: ' + r.error;
   return msg.trim();
+}
+
+/** Menu: take Finance-only vendors off the shared supplier list (asks first; Masters editors). */
+function IM_retireFinanceVendorsNow() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    var d = Masters.retireFinanceVendors(false);
+    if (!d.count) { ui.alert('Nothing to remove', 'No Finance-only vendors are on the supplier list.', ui.ButtonSet.OK); return; }
+    var a = ui.alert('Remove Finance-only vendors from the supplier list?', d.count + ' party(ies) came only from Finance and have no IMS supplier code, e.g.:\n' + d.names.slice(0, 8).join('\n') +
+      '\n\nThey are NOT deleted: only their Supplier flag in Masters is switched to No (switch it back to undo). Finance keeps its own vendor list.', ui.ButtonSet.YES_NO);
+    if (a !== ui.Button.YES) return;
+    Masters.retireFinanceVendors(true); IM_partyClearCache_();
+    SpreadsheetApp.getActive().toast(IM_partySummary_(IM_syncPartiesToIms_(true)) || 'Done.', '🔗 Interlink', 10);
+  } catch (e) { ui.alert('Not done', /Editors only|Admin only|permission|access/i.test(String(e && e.message)) ? 'Only Masters editors can do this.' : String(e && e.message), ui.ButtonSet.OK); }
 }
 
 /** Menu: 🔗 Send suppliers and job workers to Masters (and copy Masters back). */
