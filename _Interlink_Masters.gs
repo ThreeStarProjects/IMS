@@ -322,15 +322,29 @@ function IM_partyTxt_(v) { return String(v == null ? '' : v).trim(); }
 function IM_partyActive_(v) { return v === true || String(v).toLowerCase() === 'true' || String(v).toLowerCase() === 'yes'; }
 function IM_partyNorm_(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
 
+/** True when a register already holds this party code (then its row must stay). */
+function IM_partyCodeUsed_(code) {
+  var ss = SpreadsheetApp.getActive();
+  return [['Inward Register', 6], ['PO Register', 4], ['Job Work Outward Register', 4]].some(function (x) {
+    var sh = ss.getSheetByName(x[0]); if (!sh || sh.getLastRow() < 2) return false;
+    return sh.getRange(2, x[1], sh.getLastRow() - 1, 1).getValues().some(function (r) { return String(r[0]).trim() === code; });
+  });
+}
+
 /** Rewrites the generated copy of one sheet from Masters. Returns { rows, added, changed, waiting:[names], onlyHere:[names] } or null (sheet missing / Masters returned nobody). */
 function IM_mirrorParties_(k) {
   var t = IM_partyTxt_, sh = SpreadsheetApp.getActive().getSheetByName(k.sheet);
   if (!sh) return null;
-  var parties = (IM_getParties(k.flag) || []).filter(function (p) { return t(p.Name); });
-  if (!parties.length) return null;                      // Masters returned nothing: leave the sheet exactly as it is
+  var all = (IM_getParties(k.flag) || []).filter(function (p) { return t(p.Name); });
+  if (!all.length) return null;                          // Masters returned nothing: leave the sheet exactly as it is
+  // A party copied from Finance only (has a Finance code, never an IMS code) is an accounts vendor, not an IMS supplier: not listed here.
+  // To list one in IMS, give it an IMS code in Masters (or add it through the IMS form).
+  var parties = all.filter(function (p) { return t(p[k.code]) || !t(p.Finance_ID); });
+  var hidden = {}; all.forEach(function (p) { if (!(t(p[k.code]) || !t(p.Finance_ID))) hidden[t(p.Party_ID)] = true; });
   var next = nextRowByCol(sh, 1), cur = next > 2 ? sh.getRange(2, 1, next - 2, 9).getValues() : [];
   var rowOf = {}; cur.forEach(function (r, i) { if (t(r[0])) rowOf[t(r[0])] = i; });
   var inMasters = {}, want = [];
+  Object.keys(hidden).forEach(function (c) { inMasters[c] = true; });   // known to Masters, just not listed here
   parties.forEach(function (p) {
     var code = t(p[k.code]) || t(p.Party_ID);
     inMasters[code] = true;
@@ -350,7 +364,13 @@ function IM_mirrorParties_(k) {
     if (IM_partyActive_(r[8]) !== w[8]) { r[8] = w[8]; diff = true; }
     if (diff) res.changed++;
   });
+  // rows an earlier copy appended for Finance-only vendors are removed again, unless a document already uses the code
+  res.removed = 0;
+  var drop = [];
+  cur.forEach(function (r, i) { var c = t(r[0]); if (hidden[c] && !IM_partyCodeUsed_(c)) drop.push(i); });
   if (res.changed) sh.getRange(2, 1, cur.length, 9).setValues(cur);
+  drop.reverse().forEach(function (i) { sh.deleteRow(i + 2); res.removed++; });
+  if (drop.length) next -= drop.length;
   if (add.length) { sh.getRange(next, 1, add.length, 9).setValues(add); res.added = add.length; }
   try { if (!sh.getRange('A1').getNote()) sh.getRange('A1').setNote('Kept in step with Masters (Parties) automatically. Add or change ' + k.label + 's with the IMS forms or in Masters: a change typed straight into this sheet is overwritten the next time Masters is read.'); } catch (e) {}
   return res;
