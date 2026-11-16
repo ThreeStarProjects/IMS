@@ -26,24 +26,36 @@
 // Branding + Config accessors
 // ============================================================================
 
+// The whole Config sheet, read ONCE per run (a PDF used to read it about 20 times). Only for document values (company, bank, terms,
+// folder); the document-number counters keep using getConfig / setConfig, which always read the sheet.
+var _DOC_CFG = null;
+function _docCfg_(key) {
+  if (!_DOC_CFG) {
+    _DOC_CFG = {};
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Config');
+    if (sh && sh.getLastRow() >= 2) sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(function (r) { if (!(r[0] in _DOC_CFG)) _DOC_CFG[r[0]] = r[1]; });
+  }
+  return key in _DOC_CFG ? _DOC_CFG[key] : null;
+}
+
 function _brand() {
   return {
-    company:   getConfig('Company Name')      || '3 Star Projects',
-    email:     getConfig('Company Email')     || '',
-    address:   getConfig('Company Address')   || '',
-    phone:     getConfig('Company Phone')     || '',
-    logoUrl:   getConfig('Company Logo URL')  || '',
-    primary:   getConfig('Brand Primary Color')   || '#1F4E79',
-    secondary: getConfig('Brand Secondary Color') || '#F47C2C',
-    state:     getConfig('Company State')     || '',
-    gstin:     getConfig('Company GSTIN')     || '',
-    pan:       getConfig('Company PAN')       || '',
-    bankName:  getConfig('Bank Name')         || '',
-    bankAcct:  getConfig('Bank Account No')   || '',
-    bankIfsc:  getConfig('Bank IFSC')         || '',
-    bankBranch:getConfig('Bank Branch')       || '',
-    terms:     getConfig('Terms and Conditions') || '',
-    poTerms:   getConfig('PO Terms') || _DEFAULT_PO_TERMS,
+    company:   _docCfg_('Company Name')      || '3 Star Projects',
+    email:     _docCfg_('Company Email')     || '',
+    address:   _docCfg_('Company Address')   || '',
+    phone:     _docCfg_('Company Phone')     || '',
+    logoUrl:   _docCfg_('Company Logo URL')  || '',
+    primary:   _docCfg_('Brand Primary Color')   || '#1F4E79',
+    secondary: _docCfg_('Brand Secondary Color') || '#F47C2C',
+    state:     _docCfg_('Company State')     || '',
+    gstin:     _docCfg_('Company GSTIN')     || '',
+    pan:       _docCfg_('Company PAN')       || '',
+    bankName:  _docCfg_('Bank Name')         || '',
+    bankAcct:  _docCfg_('Bank Account No')   || '',
+    bankIfsc:  _docCfg_('Bank IFSC')         || '',
+    bankBranch:_docCfg_('Bank Branch')       || '',
+    terms:     _docCfg_('Terms and Conditions') || '',
+    poTerms:   _docCfg_('PO Terms') || _DEFAULT_PO_TERMS,
   };
 }
 
@@ -91,7 +103,7 @@ function _money(n) {
 // remote URLs reliably, but inlined base64 does.
 // ============================================================================
 
-function _logoDataUrl() { return _driveImageDataUrl(getConfig('Company Logo URL')); }
+function _logoDataUrl() { return _driveImageDataUrl(_docCfg_('Company Logo URL')); }
 
 // Fetch any image URL, return base64 data URL. Handles two sources:
 //   1. Drive share links  → DriveApp (works for private files)
@@ -119,8 +131,14 @@ function _driveImageDataUrl(url) {
     let blob;
     const driveId = _extractDriveId(trimmed);
     if (driveId) {
-      // Drive file — auth'd fetch, works for private/shared files
-      blob = DriveApp.getFileById(driveId).getBlob();
+      // Drive file — the 600px version first: far smaller than the original, so it converts fast and fits the cache.
+      // If Drive does not hand back an image (no thumbnail yet, access quirk), the original file is used as before.
+      try {
+        const th = UrlFetchApp.fetch('https://drive.google.com/thumbnail?id=' + encodeURIComponent(driveId) + '&sz=w600',
+          { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true, followRedirects: true });
+        if (th.getResponseCode() === 200 && /^image\//i.test(String(th.getBlob().getContentType()))) blob = th.getBlob();
+      } catch (e2) {}
+      if (!blob) blob = DriveApp.getFileById(driveId).getBlob();
     } else if (/^https?:\/\//i.test(trimmed)) {
       // Public URL — direct HTTPS fetch (Cloudinary, S3, etc.)
       const response = UrlFetchApp.fetch(trimmed, { muteHttpExceptions: true, followRedirects: true });
@@ -482,19 +500,27 @@ function _buildDocHtml(docSpec) {
 // ============================================================================
 
 function savePdfToDrive(html, docNo, docType) {
-  const rootId = getConfig('PDF Docs Folder ID');
-  const root = (rootId && rootId.trim())
-    ? DriveApp.getFolderById(rootId.trim())
-    : DriveApp.getRootFolder();
+  const t0 = Date.now();
+  const rootId = String(_docCfg_('PDF Docs Folder ID') || '').trim();
   const now = new Date();
   const yearMonth = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM');
-  const typeFolder = _getOrCreateFolder(root, docType);
-  const monthFolder = _getOrCreateFolder(typeFolder, yearMonth);
+  const cache = CacheService.getScriptCache(), fKey = 'pdfFolder_' + rootId + '_' + docType + '_' + yearMonth;
+  let monthFolder = null;
+  const known = cache.get(fKey);
+  if (known) { try { monthFolder = DriveApp.getFolderById(known); if (monthFolder.isTrashed()) monthFolder = null; } catch (e) { monthFolder = null; } }
+  if (!monthFolder) {
+    const root = rootId ? DriveApp.getFolderById(rootId) : DriveApp.getRootFolder();
+    monthFolder = _getOrCreateFolder(_getOrCreateFolder(root, docType), yearMonth);
+    try { cache.put(fKey, monthFolder.getId(), 21600); } catch (e) {}
+  }
+  const t1 = Date.now();
   const filename = docType + '_' + docNo + '_' + dateString(now) + '.pdf';
   const pdfBlob = Utilities.newBlob(html, 'text/html', filename)
     .getAs('application/pdf').setName(filename);
+  const t2 = Date.now();
   const file = monthFolder.createFile(pdfBlob);
   const id = file.getId();
+  console.log('PDF ' + docType + ' ' + docNo + ': folder ' + (t1 - t0) + ' ms, convert ' + (t2 - t1) + ' ms (' + Math.round(html.length / 1024) + ' KB html), save ' + (Date.now() - t2) + ' ms');
   return {
     url: file.getUrl(),
     fileId: id,
@@ -510,9 +536,9 @@ function _getOrCreateFolder(parent, name) {
 // Update the PDF link column of every row matching docNo. Used after PDF gen.
 function writeBackPdfLink(sheet, docNoCol, docNo, linkCol, url) {
   const rows = getRowsByValue(sheet, docNoCol, docNo);
-  rows.forEach(function(r) {
-    sheet.getRange(r, linkCol).setFormula('=HYPERLINK("' + url + '","View PDF")');
-  });
+  if (!rows.length) return;
+  sheet.getRangeList(rows.map(function(r) { return sheet.getRange(r, linkCol).getA1Notation(); }))
+    .setFormula('=HYPERLINK("' + url + '","View PDF")');
 }
 
 // ============================================================================
