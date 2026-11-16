@@ -121,6 +121,7 @@ function IM_onOpen_() {
     .addItem('Refresh dropdowns from Masters', 'IM_refreshDropdowns')
     .addItem('➕ Add employee',                'IM_addEmployeeDialog')
     .addItem('Send suppliers and job workers to Masters', 'IM_syncPartiesNow')
+    .addItem('DocGen link: show key',            'IM_docgenSetup')
     .addSeparator()
     .addItem('Process PM reservation requests now', 'IM_processReservationRequestsNow')
     .addSeparator()
