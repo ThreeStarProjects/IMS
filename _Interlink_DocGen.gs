@@ -77,10 +77,18 @@ function IM_dgFeeds_() {
   var items = it.rows.filter(function (r) { return t(r[kC]) && r[kA] !== false && String(r[kA]).toLowerCase() !== 'false'; }).map(function (r) {
     return { code: t(r[kC]), description: t(r[kD]) || t(r[kN]), name: t(r[kN]), size: t(r[kS]), grade: t(r[kG]), uom: t(r[kU]), hsn: t(r[kH]), rate: Number(r[kR]) || 0 };
   });
+  // Finished goods + semi-finished goods: the codes a Delivery Challan's MAIN lines use (stock goes down for these)
+  var goods = [['FG Master', 'FG Code', 'FG'], ['SFG Master', 'SFG Code', 'SFG']].reduce(function (acc, m) {
+    var g = IM_dgRows_(m[0]), q = function (names) { return IM_dgCol_(g.hdr, names); }, gc = q([m[1]]), gd = q(['Description']), gn = q(['Item Name']), gu = q(['UOM']), ga = q(['Active?']);
+    g.rows.forEach(function (r) {
+      if (t(r[gc]) && r[ga] !== false && String(r[ga]).toLowerCase() !== 'false') acc.push({ code: t(r[gc]), description: t(r[gd]) || t(r[gn]), uom: t(r[gu]), kind: m[2] });
+    });
+    return acc;
+  }, []);
   var customers = IM_customerPicks_().map(function (c) { return { name: c.name, legalName: c.legal, gst: c.gstin, billAddress: c.bill, shipAddress: c.ship, paymentTerms: c.terms }; });
   var projects = (IM_getProjects() || []).filter(function (p) { return t(p.Name) && String(p['Active?'] || 'Yes').toLowerCase() !== 'no'; })
     .map(function (p) { return { code: t(p.Project_ID), name: t(p.Name), label: t(p.Project_ID) + ' — ' + t(p.Name) }; });
-  return { suppliers: suppliers, items: items, customers: customers, projects: projects, at: new Date().toISOString() };
+  return { suppliers: suppliers, items: items, goods: goods, customers: customers, projects: projects, at: new Date().toISOString() };
 }
 
 // ---------------------------------------------------------------- recording (idempotent)
