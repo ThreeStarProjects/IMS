@@ -184,10 +184,14 @@ function addSupplier(d) {
     if (d.email && !_looksLikeEmail(d.email)) throw new Error('Email format invalid');
     if (d.gst) _assertGstFormat(d.gst);
 
-    // Masters is the master list of suppliers: the supplier is created there, and this sheet is refreshed from it.
-    const pr = IM_partyFromForm_('supplier', assignSupplierCode(), d, false);
-    if (!pr.ok) throw new Error(pr.message);
-    return { success: true, message: 'Supplier ' + pr.code + ' added: ' + d.firmName, code: pr.code };
+    const code = assignSupplierCode();
+    const row = [
+      code, String(d.firmName).trim(), d.category || '', d.contact || '',
+      d.mobile || '', d.email || '', d.gst || '', d.address || '', true];
+    const rowNum = nextRowByCol(sh, 1);
+    sh.getRange(rowNum, 1, 1, row.length).setValues([row]);
+    IM_sendPartiesSoon_();   // Masters keeps a copy (best effort; also sent when IMS opens)
+    return { success: true, message: 'Supplier ' + code + ' added: ' + d.firmName, code: code };
   } catch (e) {
     return { success: false, message: e.message };
   }
@@ -678,10 +682,6 @@ function editSupplier(d) {
     const sh = ss.getSheetByName('Supplier Master');
     const row = _findRowByCode(sh, d.code);
     if (!row) throw new Error('Supplier ' + d.code + ' not found');
-    const pr = IM_partyFromForm_('supplier', d.code, d, true);   // Masters is the master: the change is made there and copied back here
-    if (pr.ok) return { success: true, message: 'Supplier ' + d.code + ' updated', code: d.code };
-    if (!pr.notInMasters) throw new Error(pr.message);
-    // (a row Masters does not know yet is changed here; it reaches Masters when it is linked)
     if (d.firmName !== undefined) sh.getRange(row, 2).setValue(String(d.firmName).trim());
     if (d.category !== undefined) sh.getRange(row, 3).setValue(d.category || '');
     if (d.contact  !== undefined) sh.getRange(row, 4).setValue(d.contact || '');
@@ -690,6 +690,7 @@ function editSupplier(d) {
     if (d.gst      !== undefined) sh.getRange(row, 7).setValue(d.gst || '');
     if (d.address  !== undefined) sh.getRange(row, 8).setValue(d.address || '');
     if (d.active   !== undefined) sh.getRange(row, 9).setValue(!!d.active);
+    IM_sendPartiesSoon_();
     return { success: true, message: 'Supplier ' + d.code + ' updated', code: d.code };
   } catch (e) {  return { success: false, message: e.message }; }
 }
@@ -701,9 +702,6 @@ function editJobWorker(d) {
     const sh = ss.getSheetByName('Job Worker Master');
     const row = _findRowByCode(sh, d.code);
     if (!row) throw new Error('Job Worker ' + d.code + ' not found');
-    const pr = IM_partyFromForm_('jobworker', d.code, d, true);   // Masters is the master: the change is made there and copied back here
-    if (pr.ok) return { success: true, message: 'Job Worker ' + d.code + ' updated', code: d.code };
-    if (!pr.notInMasters) throw new Error(pr.message);
     if (d.firmName    !== undefined) sh.getRange(row, 2).setValue(String(d.firmName).trim());
     if (d.processType !== undefined) sh.getRange(row, 3).setValue(d.processType);
     if (d.contact     !== undefined) sh.getRange(row, 4).setValue(d.contact || '');
@@ -712,6 +710,7 @@ function editJobWorker(d) {
     if (d.gst         !== undefined) sh.getRange(row, 7).setValue(d.gst || '');
     if (d.address     !== undefined) sh.getRange(row, 8).setValue(d.address || '');
     if (d.active      !== undefined) sh.getRange(row, 9).setValue(!!d.active);
+    IM_sendPartiesSoon_();
     return { success: true, message: 'Job Worker ' + d.code + ' updated', code: d.code };
   } catch (e) {  return { success: false, message: e.message }; }
 }
@@ -743,10 +742,14 @@ function addJobWorker(d) {
     if (d.email && !_looksLikeEmail(d.email)) throw new Error('Email format invalid');
     if (d.gst) _assertGstFormat(d.gst);
 
-    // Masters is the master list of job workers: created there, this sheet is refreshed from it.
-    const pr = IM_partyFromForm_('jobworker', assignJobWorkerCode(), d, false);
-    if (!pr.ok) throw new Error(pr.message);
-    return { success: true, message: 'Job Worker ' + pr.code + ' added: ' + d.firmName, code: pr.code };
+    const code = assignJobWorkerCode();
+    const row = [
+      code, String(d.firmName).trim(), d.processType, d.contact || '',
+      d.mobile || '', d.email || '', d.gst || '', d.address || '', true];
+    const rowNum = nextRowByCol(sh, 1);
+    sh.getRange(rowNum, 1, 1, row.length).setValues([row]);
+    IM_sendPartiesSoon_();   // Masters keeps a copy (best effort; also sent when IMS opens)
+    return { success: true, message: 'Job Worker ' + code + ' added: ' + d.firmName, code: code };
   } catch (e) {
     return { success: false, message: e.message };
   }
