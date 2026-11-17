@@ -126,14 +126,18 @@ function IM_dgRecord_(kind, d, create, revise) {
   try {
     var log = IM_dgLog_(), last = log.getLastRow(), rows = last >= 2 ? log.getRange(2, 1, last - 1, 5).getValues() : [];
     var digest = IM_dgDigest_(d), number = extractCodePrefix(IM_dgText_(d.imsNumber)), r;
+    if (!number) {
+      // The same DocGen id again (a retry after a later step failed). Same content = nothing to do. Changed content (the user fixed the
+      // form and saved again) = a new version of that document, never a silent "already done" that would leave IMS with the old lines.
+      var hit = rows.filter(function (x) { return x[0] === ref && x[1] === kind; })[0];
+      if (hit) { if (hit[4] === digest) return { ok: true, number: hit[2], already: true }; number = hit[2]; }
+    }
     if (number) {
       var mine = rows.filter(function (x) { return x[1] === kind && x[2] === number; });
       if (!mine.length) return { ok: false, error: number + ' was not recorded through DocGen, so DocGen cannot change it. Amend it in IMS.' };
       if (mine[mine.length - 1][4] === digest) return { ok: true, number: number, already: true };
       r = revise(d, number);
     } else {
-      var hit = rows.filter(function (x) { return x[0] === ref && x[1] === kind; })[0];
-      if (hit) return { ok: true, number: hit[2], already: true };
       r = create(d);
     }
     if (r && r.needsConfirm) return { ok: false, needsConfirm: true, warnings: r.warnings || [], error: r.message };
