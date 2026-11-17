@@ -49,6 +49,9 @@ function IM_dgHandle_(body) {
     case 'feeds':    return { ok: true, feeds: IM_dgFeeds_() };
     case 'recordPo': return IM_dgRecord_('PO', d, IM_dgPo_, IM_dgRevisePo_);
     case 'recordDc': return IM_dgRecord_('DC', d, IM_dgDc_, IM_dgReviseDc_);
+    case 'recordRfq': return IM_dgRecord_('RFQ', d, IM_dgRfq_, IM_dgRfq_);
+    case 'recordJwc': return IM_dgRecord_('JWC', d, IM_dgJwc_, IM_dgReviseJwc_);
+    case 'photos':   return IM_dgPhotos_(d);
     default:         return { ok: false, error: 'Unknown action.' };
   }
 }
@@ -88,7 +91,12 @@ function IM_dgFeeds_() {
   var customers = IM_customerPicks_().map(function (c) { return { name: c.name, legalName: c.legal, gst: c.gstin, billAddress: c.bill, shipAddress: c.ship, paymentTerms: c.terms }; });
   var projects = (IM_getProjects() || []).filter(function (p) { return t(p.Name) && String(p['Active?'] || 'Yes').toLowerCase() !== 'no'; })
     .map(function (p) { return { code: t(p.Project_ID), name: t(p.Name), label: t(p.Project_ID) + ' — ' + t(p.Name) }; });
-  return { suppliers: suppliers, items: items, goods: goods, customers: customers, projects: projects, at: new Date().toISOString() };
+  var jwm = IM_dgRows_('Job Worker Master'), w = function (names) { return IM_dgCol_(jwm.hdr, names); };
+  var wC = w(['Job Worker Code']), wN = w(['Firm Name']), wP = w(['Process Type']), wCp = w(['Contact Person']), wM = w(['Mobile No']), wE = w(['Email']), wG = w(['GST No']), wA = w(['Address']), wAct = w(['Active?']);
+  var jobWorkers = jwm.rows.filter(function (r) { return t(r[wC]) && t(r[wN]) && r[wAct] !== false && String(r[wAct]).toLowerCase() !== 'false'; }).map(function (r) {
+    return { code: t(r[wC]), name: t(r[wN]), processType: t(r[wP]), contact: t(r[wCp]), mobile: t(r[wM]), email: t(r[wE]), gst: t(r[wG]).toUpperCase(), address: t(r[wA]) };
+  });
+  return { suppliers: suppliers, items: items, goods: goods, customers: customers, projects: projects, jobWorkers: jobWorkers, at: new Date().toISOString() };
 }
 
 // ---------------------------------------------------------------- recording (idempotent)
@@ -247,6 +255,99 @@ function IM_dgReviseDc_(d, dcNo) {
     updateItemSnapshotsBatch(list.filter(function (c) { return items && getRowByCode(items, c); }));
     return { success: true, code: dcNo, message: 'Challan ' + dcNo + ' updated (' + all.length + ' lines).' };
   } finally { lock.releaseLock(); }
+}
+
+// ---------------------------------------------------------------- Request for Quotation (record only: IMS keeps no RFQ register)
+/** Every code a RFQ line may use: Item Master, SFG Master and FG Master. */
+function IM_dgCodes_() {
+  var all = {};
+  ['Item Master', 'SFG Master', 'FG Master'].forEach(function (n) { var r = IM_dgRows_(n); r.rows.forEach(function (x) { if (x[0]) all[IM_dgText_(x[0])] = true; }); });
+  return all;
+}
+/**
+ * An RFQ has no stock effect and IMS has no RFQ register, so "recording" it means: check every line against the masters (the same codes
+ * the IMS RFQ form offers) and keep the number in the DocGen log. The number is DocGen's. A new version just re-checks.
+ */
+function IM_dgRfq_(d) {
+  var lines = d.lineItems;
+  if (!Array.isArray(lines) || !lines.length) throw new Error('At least one line is required.');
+  if (lines.length > IM_DG_MAX_LINES) throw new Error('Too many lines.');
+  var codes = IM_dgCodes_();
+  lines.forEach(function (l, i) {
+    if (!codes[IM_dgText_(l.itemCode)]) throw new Error('Line ' + (i + 1) + ': ' + IM_dgText_(l.itemCode) + ' is not an IMS item, semi-finished or finished goods code.');
+    if (!(Number(l.qty) > 0)) throw new Error('Line ' + (i + 1) + ': quantity must be above zero.');
+  });
+  var n = IM_dgNumber_(d);
+  return { success: true, code: n, message: 'RFQ ' + n + ' recorded (' + lines.length + ' lines).' };
+}
+
+// ---------------------------------------------------------------- Job Work Challan (material sent to a job worker: stock goes down)
+function IM_dgJwcLines_(d) {
+  var lines = d.lineItems, t = IM_dgText_;
+  if (!Array.isArray(lines) || !lines.length) throw new Error('At least one line is required.');
+  if (lines.length > IM_DG_MAX_LINES) throw new Error('Too many lines.');
+  return lines.map(function (l) { return { sfgCode: t(l.sfgCode), qty: Number(l.qty), expectedReturn: l.expectedReturn || '', remarks: t(l.remarks), weight: Number(l.weight) || 0 }; });
+}
+function IM_dgJwc_(d) {
+  return addJobWorkOutMultiLine({
+    manualJwcNo: IM_dgNumber_(d), date: d.date, jobWorkerCode: IM_dgText_(d.jobWorkerCode), lineItems: IM_dgJwcLines_(d),
+    bypassStockCheck: d.bypassStockCheck === true, skipPdf: true
+  });
+}
+/**
+ * A new version of a Job Work Challan: the challan's lines are REPLACED (stock is worked out from the register rows, so only the
+ * difference moves). Only the extra quantity is checked against stock. Refused once anything was received back (status no longer Open)
+ * and when the job worker would change. If writing the new lines fails, the old ones are put back.
+ * ponytail: not under IMS's document lock while rows are swapped (the write helper takes it); the window is a fraction of a second.
+ */
+function IM_dgReviseJwc_(d, jwcNo) {
+  var ss = SpreadsheetApp.getActive(), reg = ss.getSheetByName('Job Work Outward Register'), lines = IM_dgJwcLines_(d);
+  var all = reg && reg.getLastRow() >= 2 ? reg.getRange(2, 1, reg.getLastRow() - 1, 17).getValues() : [];
+  var rowNos = [], old = [];
+  all.forEach(function (r, i) { if (r[1] === jwcNo) { rowNos.push(i + 2); old.push(r); } });
+  if (!old.length) throw new Error('Job Work Challan ' + jwcNo + ' not found in IMS.');
+  if (old[0][3] !== IM_dgText_(d.jobWorkerCode)) throw new Error('The job worker of ' + jwcNo + ' cannot be changed. Make a new challan instead.');
+  if (old.some(function (r) { return r[13] !== 'Open'; })) throw new Error(jwcNo + ' already has goods received back, so it cannot be changed from DocGen. Fix it in IMS.');
+  if (d.bypassStockCheck !== true) {
+    var oldQty = {}, newQty = {};
+    old.forEach(function (r) { oldQty[r[6]] = (oldQty[r[6]] || 0) + (Number(r[8]) || 0); });
+    lines.forEach(function (l) { newQty[l.sfgCode] = (newQty[l.sfgCode] || 0) + l.qty; });
+    var extra = Object.keys(newQty).map(function (c) { return { code: c, qty: newQty[c] - (oldQty[c] || 0) }; }).filter(function (x) { return x.qty > 0; });
+    if (extra.length) { var chk = _checkStockAvailability(extra); if (!chk.ok) return { success: false, needsConfirm: true, warnings: chk.warnings, message: 'Some lines exceed Available stock. Confirm to proceed anyway.' }; }
+  }
+  var refresh = function (codes) {
+    var sfg = ss.getSheetByName('SFG Master'), items = ss.getSheetByName('Item Master');
+    updateSfgSnapshotsBatch(codes.filter(function (c) { return sfg && getRowByCode(sfg, c); }));
+    updateItemSnapshotsBatch(codes.filter(function (c) { return !(sfg && getRowByCode(sfg, c)) && items && getRowByCode(items, c); }));
+  };
+  rowNos.slice().reverse().forEach(function (r) { reg.deleteRow(r); });
+  var res;
+  try {
+    res = postJobWorkOutwardRows({ manualJwcNo: jwcNo, date: d.date, jobWorkerCode: IM_dgText_(d.jobWorkerCode), lineItems: lines, skipPdf: true });
+  } catch (e) {
+    reg.getRange(reg.getLastRow() + 1, 1, old.length, old[0].length).setValues(old);   // put the old lines back
+    refresh(old.map(function (r) { return r[6]; }));
+    throw e;
+  }
+  var gone = old.map(function (r) { return r[6]; }).filter(function (c) { return !lines.some(function (l) { return l.sfgCode === c; }); });
+  if (gone.length) refresh(gone);
+  return { success: true, code: jwcNo, message: 'Job Work Challan ' + jwcNo + ' updated (' + res.rows + ' lines).' };
+}
+
+// ---------------------------------------------------------------- photos (pictures inside sheet cells, shrunk for DocGen)
+/** codes -> { code: 'data:image/...;base64,...' }, about 600px wide. A code without a photo is simply left out. */
+function IM_dgPhotos_(d) {
+  var codes = (Array.isArray(d.codes) ? d.codes : []).map(IM_dgText_).filter(function (c) { return /^[A-Za-z0-9_-]{1,30}$/.test(c); });
+  if (!codes.length) return { ok: false, error: 'codes is required.' };
+  if (codes.length > 40) return { ok: false, error: 'At most 40 codes per call.' };
+  var urls = {};
+  ['Item Master', 'SFG Master', 'FG Master'].forEach(function (n) {
+    var m = getMasterPhotoUrlMap(n); codes.forEach(function (c) { if (m[c] && !urls[c]) urls[c] = m[c]; });
+  });
+  _prefetchImages_(Object.keys(urls).map(function (c) { return urls[c]; }));
+  var photos = {};
+  Object.keys(urls).forEach(function (c) { var u = _driveImageDataUrl(urls[c]); if (u && u.length < 150000) photos[c] = u; });
+  return { ok: true, photos: photos };
 }
 
 // ---------------------------------------------------------------- setup (menu)

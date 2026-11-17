@@ -375,7 +375,15 @@ function postJobWorkOutwardRows(formData) {
   const lock = LockService.getDocumentLock();
   lock.waitLock(15000);
   try {
-    const jwcNo = getNextCounter('Next Job Work Challan Counter', 'JWC', 4);
+    // A number supplied by the caller (DocGen numbers its own documents and IMS mirrors them) is used as is; a repeat is refused.
+    let jwcNo;
+    if (formData.manualJwcNo && String(formData.manualJwcNo).trim()) {
+      jwcNo = String(formData.manualJwcNo).trim();
+      const taken = reg.getLastRow() >= 2 && reg.getRange(2, 2, reg.getLastRow() - 1, 1).getValues().some(function(r) { return r[0] === jwcNo; });
+      if (taken) throw new Error('Job Work Challan No "' + jwcNo + '" already exists in IMS.');
+    } else {
+      jwcNo = getNextCounter('Next Job Work Challan Counter', 'JWC', 4);
+    }
     const startRow = nextRowByCol(reg, 1);
     const rows = [];
     const touchedSfg = [], touchedRm = [];
