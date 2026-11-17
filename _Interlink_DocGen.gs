@@ -47,7 +47,6 @@ function IM_dgHandle_(body) {
   var d = (body && body.data) || {};
   switch (body.action) {
     case 'feeds':    return { ok: true, feeds: IM_dgFeeds_() };
-    case 'peek':     return IM_dgPeek_(d);
     case 'recordPo': return IM_dgRecord_('PO', d, IM_dgPo_, IM_dgRevisePo_);
     case 'recordDc': return IM_dgRecord_('DC', d, IM_dgDc_, IM_dgReviseDc_);
     default:         return { ok: false, error: 'Unknown action.' };
@@ -138,15 +137,11 @@ function IM_dgRecord_(kind, d, create, revise) {
   } finally { lock.releaseLock(); }
 }
 
-/** The number the next PO / Challan will get, for showing on the form before saving (the number is only really taken when it is saved). */
-function IM_dgPeek_(d) {
-  var pad = function (n, w) { return String(n).padStart(w, '0'); };
-  if (d.kind === 'PO') return { ok: true, number: 'PO-' + pad((Number(getConfig('Next PO Counter')) || 0) + 1, 4) };
-  if (d.kind === 'DC') {
-    var fy = _fiscalYear(d.date ? parseDate(d.date) : new Date());
-    return { ok: true, number: (getConfig('DC No Prefix') || 'TSP') + '/' + fy + '/' + pad((Number(getConfig('DC Counter ' + fy)) || 0) + 1, 3) };
-  }
-  return { ok: false, error: 'Unknown kind.' };
+/** The document number comes from DocGen (its own format); IMS records the document under that same number. */
+function IM_dgNumber_(d) {
+  var n = IM_dgText_(d.number);
+  if (!n || n.length > 40 || n.indexOf(' \u2014 ') >= 0) throw new Error('A document number (up to 40 characters) is required.');
+  return n;
 }
 
 function IM_dgText_(v) { return String(v == null ? '' : v).trim(); }
@@ -158,6 +153,7 @@ function IM_dgPo_(d) {
   if (lines.length > IM_DG_MAX_LINES) throw new Error('Too many lines.');
   var t = IM_dgText_;
   return addPoMultiLine({
+    manualPoNo: IM_dgNumber_(d),
     date: d.date, supplierCode: t(d.supplierCode), deliveryDate: d.deliveryDate || '',
     remarks: IM_dgTag_(d) + t(d.remarks),
     lineItems: lines.map(function (l) { return { itemCode: t(l.itemCode), qty: Number(l.qty), rate: Number(l.rate), gst: Number(l.gst) || 0, discount: Number(l.discount) || 0, discountMode: l.discountMode === 'amt' ? 'amt' : 'pct' }; }),
@@ -173,6 +169,7 @@ function IM_dgDc_(d) {
   if (main.length + hw.length > IM_DG_MAX_LINES) throw new Error('Too many lines.');
   var line = function (l) { return { itemCode: t(l.itemCode), description: t(l.description), qty: Number(l.qty), uom: t(l.uom) || 'Nos', weight: Number(l.weight) || 0, remark: t(l.remark) }; };
   return addFgDelivery({
+    manualDcNo: IM_dgNumber_(d),
     date: d.date, deliveryType: d.deliveryType === 'Internal' ? 'Internal' : 'Customer',
     customerName: t(d.customerName), project: t(d.project), paymentTerms: t(d.paymentTerms), otherRef: IM_dgTag_(d) + t(d.otherRef),
     billTo: t(d.billTo), billToGstin: t(d.billToGstin), shipTo: t(d.shipTo), shipToGstin: t(d.shipToGstin),

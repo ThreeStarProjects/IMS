@@ -563,7 +563,16 @@ function postPoRows(formData) {
   const lock = LockService.getDocumentLock();
   lock.waitLock(15000);
   try {
-    const poNo = getNextCounter('Next PO Counter', 'PO', 4);
+    // A number supplied by the caller (DocGen numbers its own documents and IMS mirrors them) is used as is; a repeat is refused.
+    // Without one, IMS's own counter issues it as always.
+    let poNo;
+    if (formData.manualPoNo && String(formData.manualPoNo).trim()) {
+      poNo = String(formData.manualPoNo).trim();
+      const taken = poReg.getLastRow() >= 2 && poReg.getRange(2, 2, poReg.getLastRow() - 1, 1).getValues().some(function(r) { return r[0] === poNo; });
+      if (taken) throw new Error('PO No "' + poNo + '" already exists in IMS.');
+    } else {
+      poNo = getNextCounter('Next PO Counter', 'PO', 4);
+    }
 
     // Build line rows first so we know the grand total
     const lineRows = [];
