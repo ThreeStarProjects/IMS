@@ -47,8 +47,9 @@ function IM_dgHandle_(body) {
   var d = (body && body.data) || {};
   switch (body.action) {
     case 'feeds':    return { ok: true, feeds: IM_dgFeeds_() };
-    case 'recordPo': return IM_dgRecord_('PO', d, IM_dgPo_);
-    case 'recordDc': return IM_dgRecord_('DC', d, IM_dgDc_);
+    case 'peek':     return IM_dgPeek_(d);
+    case 'recordPo': return IM_dgRecord_('PO', d, IM_dgPo_, IM_dgRevisePo_);
+    case 'recordDc': return IM_dgRecord_('DC', d, IM_dgDc_, IM_dgReviseDc_);
     default:         return { ok: false, error: 'Unknown action.' };
   }
 }
@@ -94,30 +95,58 @@ function IM_dgFeeds_() {
 // ---------------------------------------------------------------- recording (idempotent)
 function IM_dgLog_() {
   var ss = SpreadsheetApp.getActive(), sh = ss.getSheetByName('_DocGen_Log');
-  if (!sh) { sh = ss.insertSheet('_DocGen_Log'); sh.appendRow(['DocGen id', 'Type', 'IMS number', 'At']); sh.hideSheet(); }
+  if (!sh) { sh = ss.insertSheet('_DocGen_Log'); sh.appendRow(['DocGen id', 'Type', 'IMS number', 'At', 'Content']); sh.hideSheet(); }
+  if (sh.getMaxColumns() < 5) { sh.insertColumnsAfter(sh.getMaxColumns(), 5 - sh.getMaxColumns()); sh.getRange(1, 5).setValue('Content'); }
   return sh;
 }
 
-/** kind 'PO' | 'DC'; build(d) -> the object for the real IMS function's result: { success, code, message, needsConfirm?, warnings? } */
-function IM_dgRecord_(kind, d, build) {
+/** A fingerprint of what the document says (not who saved it or when), so saving the same content again is recognised and does nothing. */
+function IM_dgDigest_(d) {
+  var c = {}; Object.keys(d).sort().forEach(function (k) { if (['docRef', 'by', 'imsNumber', 'bypassStockCheck'].indexOf(k) < 0) c[k] = d[k]; });
+  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(c)));
+}
+
+/**
+ * kind 'PO' | 'DC'. create(d) -> { success, code, message, needsConfirm?, warnings? } is a NEW document (idempotent by docRef).
+ * When d.imsNumber is given it is a NEW VERSION of a document DocGen already recorded: revise(d, number) replaces that document's lines
+ * in place (never adds a second copy, never deducts twice). The same content saved again is a no-op.
+ */
+function IM_dgRecord_(kind, d, create, revise) {
   var ref = String((d && d.docRef) || '').trim();
   if (!ref || ref.length > 80) return { ok: false, error: 'docRef (the DocGen document id) is required.' };
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) { return { ok: false, error: 'IMS is busy, try again in a minute.' }; }
   try {
-    var log = IM_dgLog_(), last = log.getLastRow();
-    if (last >= 2) {
-      var hit = log.getRange(2, 1, last - 1, 3).getValues().filter(function (r) { return r[0] === ref && r[1] === kind; })[0];
+    var log = IM_dgLog_(), last = log.getLastRow(), rows = last >= 2 ? log.getRange(2, 1, last - 1, 5).getValues() : [];
+    var digest = IM_dgDigest_(d), number = extractCodePrefix(IM_dgText_(d.imsNumber)), r;
+    if (number) {
+      var mine = rows.filter(function (x) { return x[1] === kind && x[2] === number; });
+      if (!mine.length) return { ok: false, error: number + ' was not recorded through DocGen, so DocGen cannot change it. Amend it in IMS.' };
+      if (mine[mine.length - 1][4] === digest) return { ok: true, number: number, already: true };
+      r = revise(d, number);
+    } else {
+      var hit = rows.filter(function (x) { return x[0] === ref && x[1] === kind; })[0];
       if (hit) return { ok: true, number: hit[2], already: true };
+      r = create(d);
     }
-    var r = build(d);
     if (r && r.needsConfirm) return { ok: false, needsConfirm: true, warnings: r.warnings || [], error: r.message };
     if (!r || !r.success || !r.code) return { ok: false, error: (r && r.message) || 'IMS did not accept the document.' };
-    log.appendRow([ref, kind, r.code, new Date()]);
-    return { ok: true, number: r.code, message: r.message };
+    log.appendRow([ref, kind, r.code, new Date(), digest]);
+    return { ok: true, number: r.code, message: r.message, revised: !!number };
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
   } finally { lock.releaseLock(); }
+}
+
+/** The number the next PO / Challan will get, for showing on the form before saving (the number is only really taken when it is saved). */
+function IM_dgPeek_(d) {
+  var pad = function (n, w) { return String(n).padStart(w, '0'); };
+  if (d.kind === 'PO') return { ok: true, number: 'PO-' + pad((Number(getConfig('Next PO Counter')) || 0) + 1, 4) };
+  if (d.kind === 'DC') {
+    var fy = _fiscalYear(d.date ? parseDate(d.date) : new Date());
+    return { ok: true, number: (getConfig('DC No Prefix') || 'TSP') + '/' + fy + '/' + pad((Number(getConfig('DC Counter ' + fy)) || 0) + 1, 3) };
+  }
+  return { ok: false, error: 'Unknown kind.' };
 }
 
 function IM_dgText_(v) { return String(v == null ? '' : v).trim(); }
@@ -151,6 +180,76 @@ function IM_dgDc_(d) {
     mainItems: main.map(line), hardwareItems: hw.map(line),
     bypassStockCheck: d.bypassStockCheck === true, skipPdf: true
   });
+}
+
+// ---------------------------------------------------------------- new versions (edit in DocGen)
+/** A new version of a PO: IMS's own "Amend PO" (lines replaced in place, revision counter up). Refused once goods have been received. */
+function IM_dgRevisePo_(d, poNo) {
+  var lines = d.lineItems, ss = SpreadsheetApp.getActive(), t = IM_dgText_;
+  if (!Array.isArray(lines) || !lines.length) throw new Error('At least one line is required.');
+  var reg = ss.getSheetByName('Purchase Order Register'), pl = ss.getSheetByName('PO Lines');
+  var head = reg && reg.getLastRow() >= 2 ? reg.getRange(2, 1, reg.getLastRow() - 1, 7).getValues().filter(function (r) { return r[1] === poNo; })[0] : null;
+  if (!head) throw new Error('PO ' + poNo + ' not found in IMS.');
+  if (head[3] !== t(d.supplierCode)) throw new Error('The supplier of ' + poNo + ' cannot be changed. Make a new PO instead.');
+  if (pl && pl.getLastRow() >= 2 && pl.getRange(2, 1, pl.getLastRow() - 1, 13).getValues().some(function (r) { return r[0] === poNo && Number(r[12]) > 0; }))
+    throw new Error(poNo + ' already has goods received against it, so it cannot be changed from DocGen. Amend it in IMS.');
+  var res = amendPo({
+    poNo: poNo, date: d.date, deliveryDate: d.deliveryDate || '', remarks: IM_dgTag_(d) + t(d.remarks), skipPdf: true,
+    lineItems: lines.map(function (l) { return { itemCode: t(l.itemCode), qty: Number(l.qty), rate: Number(l.rate), gst: Number(l.gst) || 0, discount: Number(l.discount) || 0, discountMode: l.discountMode === 'amt' ? 'amt' : 'pct' }; })
+  });
+  if (res.needsConfirm) throw new Error(res.message + ' Amend it in IMS.');
+  if (!res.success) throw new Error(res.message);
+  return { success: true, code: poNo, message: res.message };
+}
+
+/**
+ * A new version of a Delivery Challan: its lines are REPLACED (stock is worked out from the lines, so the old quantities stop counting and
+ * the new ones start; the difference is all that changes). Only the extra quantity is checked against stock. Refused once anything was returned.
+ */
+function IM_dgReviseDc_(d, dcNo) {
+  var ss = SpreadsheetApp.getActive(), reg = ss.getSheetByName('FG Delivery Register'), ls = ss.getSheetByName('FG Delivery Lines'), t = IM_dgText_;
+  var main = d.mainItems, hw = d.hardwareItems || [];
+  if (!Array.isArray(main) || !main.length) throw new Error('At least one main item is required.');
+  if (main.length + hw.length > IM_DG_MAX_LINES) throw new Error('Too many lines.');
+  var lock = LockService.getDocumentLock(); lock.waitLock(15000);
+  try {
+    var regRow = -1;
+    if (reg && reg.getLastRow() >= 2) reg.getRange(2, 2, reg.getLastRow() - 1, 1).getValues().some(function (r, i) { if (r[0] === dcNo) { regRow = i + 2; return true; } return false; });
+    if (regRow < 0) throw new Error('Challan ' + dcNo + ' not found in IMS.');
+    var oldRows = [], oldQty = {}, codes = {};
+    if (ls.getLastRow() >= 2) ls.getRange(2, 1, ls.getLastRow() - 1, 10).getValues().forEach(function (r, i) {
+      if (r[0] !== dcNo) return;
+      oldRows.push(i + 2);
+      if (Number(r[9]) > 0) throw new Error(dcNo + ' has goods returned against it, so it cannot be changed from DocGen. Fix it in IMS.');
+      if (r[3]) { oldQty[r[3]] = (oldQty[r[3]] || 0) + (Number(r[5]) || 0); codes[r[3]] = 1; }
+    });
+    var all = [], totQty = 0, totWt = 0;
+    main.forEach(function (l) { var q = Number(l.qty) || 0, w = Number(l.weight) || 0; totQty += q; totWt += w; all.push({ section: 'Main', code: t(l.itemCode), desc: t(l.description), qty: q, uom: t(l.uom) || 'Nos', weight: w, remark: t(l.remark) }); });
+    hw.forEach(function (l) { var q = Number(l.qty) || 0; if (q <= 0) return; totQty += q; all.push({ section: 'Hardware', code: t(l.itemCode), desc: t(l.description), qty: q, uom: t(l.uom) || 'Nos', weight: 0, remark: t(l.remark) }); });
+    all.forEach(function (l) { if (!(l.qty > 0)) throw new Error('Every line needs a quantity above zero.'); if (!l.desc) throw new Error('Every line needs a description.'); });
+
+    // only the EXTRA quantity (new minus what this challan already took) can run the stock short
+    if (d.bypassStockCheck !== true) {
+      var newQty = {}; all.forEach(function (l) { if (l.code) newQty[l.code] = (newQty[l.code] || 0) + l.qty; });
+      var extra = Object.keys(newQty).map(function (c) { return { code: c, qty: newQty[c] - (oldQty[c] || 0) }; }).filter(function (x) { return x.qty > 0; });
+      if (extra.length) { var chk = _checkStockAvailability(extra); if (!chk.ok) return { success: false, needsConfirm: true, warnings: chk.warnings, message: 'Some lines exceed Available stock. Confirm to proceed anyway.' }; }
+    }
+
+    oldRows.reverse().forEach(function (r) { ls.deleteRow(r); });
+    var start = nextRowByCol(ls, 1);
+    ls.getRange(start, 1, all.length, 10).setValues(all.map(function (l, i) { return [dcNo, i + 1, l.section, l.code, l.desc, l.qty, l.uom, l.weight, l.remark, 0]; }));
+    reg.getRange(regRow, 3, 1, 15).setValues([[
+      parseDate(d.date), t(d.customerName), t(d.project), t(d.paymentTerms), IM_dgTag_(d) + t(d.otherRef),
+      t(d.billTo), t(d.billToGstin), t(d.shipTo), t(d.shipToGstin), t(d.vehicleNo), t(d.driver), t(d.lrNo), t(d.eWayBillNo), totQty, totWt
+    ]]);
+
+    all.forEach(function (l) { if (l.code) codes[l.code] = 1; });
+    var sfg = ss.getSheetByName('SFG Master'), items = ss.getSheetByName('Item Master');
+    var list = Object.keys(codes);
+    updateSfgSnapshotsBatch(list.filter(function (c) { return sfg && getRowByCode(sfg, c); }));
+    updateItemSnapshotsBatch(list.filter(function (c) { return items && getRowByCode(items, c); }));
+    return { success: true, code: dcNo, message: 'Challan ' + dcNo + ' updated (' + all.length + ' lines).' };
+  } finally { lock.releaseLock(); }
 }
 
 // ---------------------------------------------------------------- setup (menu)
