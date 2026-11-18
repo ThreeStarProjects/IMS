@@ -224,7 +224,10 @@ function _computeRmRowFromMaps(it, maps) {
 }
 
 // Compute an SFG snapshot row from pre-aggregated maps.
-// SFG on-hand deductions: JW outward (in-process) + FG Delivery Main (SFG shipped) + Reserved (soft-lock).
+// SFG: On Hand = what is physically in the warehouse = opening + adjustments + returned from job work - sent to job work - shipped on
+// delivery challans. Goods at a job worker are therefore ALREADY out of On Hand; "In Process" only reports how many are out there.
+// Available = On Hand - Reserved (soft-lock). (It used to take In Process off a second time, so 10 pieces at a job worker made Available
+// 10 too low and caused false "exceeds available stock" warnings. RM never did this: see _computeRmRowFromMaps.)
 function _computeSfgRowFromMaps(sf, maps) {
   const opening = maps.adjAll.opening[sf.code] || 0;
   const adj     = maps.adjAll.nonOpening[sf.code] || 0;
@@ -234,7 +237,7 @@ function _computeSfgRowFromMaps(sf, maps) {
   const reserved = (maps.reserved && maps.reserved[sf.code]) || 0;
   const onHand = opening + adj + backIn - sentOut - delOut;
   const inProcess = (maps.jwOut[sf.code] && maps.jwOut[sf.code].openQty) || 0;
-  const available = onHand - inProcess - reserved;
+  const available = onHand - reserved;
   const belowMin = (available < (sf.minLvl || 0));
   return [
     sf.code, sf.desc, [sf.size, sf.color].filter(String).join(' '),
