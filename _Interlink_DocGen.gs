@@ -339,15 +339,48 @@ function IM_dgReviseJwc_(d, jwcNo) {
 }
 
 // ---------------------------------------------------------------- photos (pictures inside sheet cells, shrunk for DocGen)
+/**
+ * code -> photo address, for ONLY the codes asked for. Reading every picture cell of the three masters (what getMasterPhotoUrlMap does for
+ * the PDFs) takes about 50 seconds, which is the whole time DocGen is willing to wait. Here only the matching rows are read, and the answer
+ * is remembered: found 6 hours, "no photo" 10 minutes (so a photo added in IMS shows up soon).
+ */
+function IM_dgPhotoUrls_(codes) {
+  var cache = CacheService.getScriptCache(), urls = {}, todo = [];
+  var hit = cache.getAll(codes.map(function (c) { return 'dgu_' + c; }));
+  codes.forEach(function (c) { var v = hit['dgu_' + c]; if (v === undefined || v === null) todo.push(c); else if (v !== '-') urls[c] = v; });
+  if (!todo.length) return urls;
+  var ss = SpreadsheetApp.getActive(), left = todo.slice();
+  ['Item Master', 'SFG Master', 'FG Master'].forEach(function (n) {
+    var sh = ss.getSheetByName(n);
+    if (!left.length || !sh || sh.getLastRow() < 2) return;
+    var ids = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+    left = left.filter(function (c) {
+      for (var i = 0; i < ids.length; i++) {
+        if (ids[i][0] !== c) continue;
+        try {
+          var p = sh.getRange(i + 2, 2).getValue();
+          if (p && typeof p === 'object') { var u = (typeof p.getUrl === 'function' && p.getUrl()) || (typeof p.getContentUrl === 'function' && p.getContentUrl()); if (u) urls[c] = u; }
+        } catch (e) { /* no usable picture in this cell */ }
+        return false;   // found in this master: done with this code
+      }
+      return true;
+    });
+  });
+  var found = {}, none = {};
+  todo.forEach(function (c) { if (urls[c]) found['dgu_' + c] = urls[c]; else none['dgu_' + c] = '-'; });
+  try {
+    if (Object.keys(found).length) cache.putAll(found, 21600);
+    if (Object.keys(none).length) cache.putAll(none, 600);
+  } catch (e) { /* could not cache: just slower next time */ }
+  return urls;
+}
+
 /** codes -> { code: 'data:image/...;base64,...' }, about 600px wide. A code without a photo is simply left out. */
 function IM_dgPhotos_(d) {
   var codes = (Array.isArray(d.codes) ? d.codes : []).map(IM_dgText_).filter(function (c) { return /^[A-Za-z0-9_-]{1,30}$/.test(c); });
   if (!codes.length) return { ok: false, error: 'codes is required.' };
   if (codes.length > 40) return { ok: false, error: 'At most 40 codes per call.' };
-  var urls = {};
-  ['Item Master', 'SFG Master', 'FG Master'].forEach(function (n) {
-    var m = getMasterPhotoUrlMap(n); codes.forEach(function (c) { if (m[c] && !urls[c]) urls[c] = m[c]; });
-  });
+  var urls = IM_dgPhotoUrls_(codes);
   _prefetchImages_(Object.keys(urls).map(function (c) { return urls[c]; }));
   var photos = {};
   Object.keys(urls).forEach(function (c) { var u = _driveImageDataUrl(urls[c]); if (u && u.length < 150000) photos[c] = u; });
