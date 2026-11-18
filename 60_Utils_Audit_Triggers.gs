@@ -15,6 +15,33 @@
 // Counters (Config-backed) — reservation is atomic per call via LockService
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Standard document numbers, the same in every system: TSP/<TYPE>/<FY>/<NNN>, e.g. TSP/PO/26-27/043.
+// One series per type per financial year (April-March, FY from the DOCUMENT date). The counter lives in Config as "<KIND> Counter <FY>".
+// The first time a series is used in FY 26-27 it continues from the old counter (so no number is ever reused); every later FY starts at 001.
+// take=false only LOOKS (the number shown on a form before saving); take=true issues it. Callers that take hold the document lock.
+// ---------------------------------------------------------------------------
+var IM_DOC_TYPES_ = {
+  PO:  { code: 'PO',  legacy: 'Next PO Counter' },
+  DC:  { code: 'DC',  legacy: 'DC Counter 2026-27' },
+  RFQ: { code: 'RFQ', legacy: 'Next RFQ Counter' },
+  JWC: { code: 'JW',  legacy: 'Next Job Work Challan Counter' }
+};
+function IM_fyShort_(d) {
+  const dt = d instanceof Date ? d : new Date(), y = dt.getFullYear(), s = dt.getMonth() >= 3 ? y : y - 1;
+  return String(s).slice(2) + '-' + String(s + 1).slice(2);
+}
+function IM_docNumber_(kind, dateObj, take) {
+  const t = IM_DOC_TYPES_[kind];
+  if (!t) throw new Error('Unknown document type: ' + kind);
+  const fy = IM_fyShort_(dateObj), key = kind + ' Counter ' + fy;
+  let cur = getConfig(key);
+  if (cur === null || cur === '') cur = (fy === '26-27') ? (Number(getConfig(t.legacy)) || 0) : 0;
+  const next = (Number(cur) || 0) + 1;
+  if (take) setConfig(key, next);
+  return 'TSP/' + t.code + '/' + fy + '/' + String(next).padStart(3, '0');
+}
+
 function getNextCounter(counterKey, prefix, pad) {
   // Callers (post* in 20_) already hold LockService.getDocumentLock().
   // Nested lock release would end outer lock early — no inner lock here.

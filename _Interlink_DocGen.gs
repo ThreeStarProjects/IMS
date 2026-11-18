@@ -47,9 +47,10 @@ function IM_dgHandle_(body) {
   var d = (body && body.data) || {};
   switch (body.action) {
     case 'feeds':    return { ok: true, feeds: IM_dgFeeds_() };
+    case 'peek':     return IM_dgPeek_(d);
     case 'recordPo': return IM_dgRecord_('PO', d, IM_dgPo_, IM_dgRevisePo_);
     case 'recordDc': return IM_dgRecord_('DC', d, IM_dgDc_, IM_dgReviseDc_);
-    case 'recordRfq': return IM_dgRecord_('RFQ', d, IM_dgRfq_, IM_dgRfq_);
+    case 'recordRfq': return IM_dgRecord_('RFQ', d, IM_dgRfq_, IM_dgReviseRfq_);
     case 'recordJwc': return IM_dgRecord_('JWC', d, IM_dgJwc_, IM_dgReviseJwc_);
     case 'photos':   return IM_dgPhotos_(d);
     default:         return { ok: false, error: 'Unknown action.' };
@@ -149,11 +150,23 @@ function IM_dgRecord_(kind, d, create, revise) {
   } finally { lock.releaseLock(); }
 }
 
-/** The document number comes from DocGen (its own format); IMS records the document under that same number. */
+/**
+ * A number DocGen asks IMS to use, if any. Normally there is none: IMS issues the standard number itself (TSP/PO/26-27/043) when it creates the
+ * document and returns it, so IMS-made and DocGen-made documents share ONE series and can never collide.
+ */
 function IM_dgNumber_(d) {
   var n = IM_dgText_(d.number);
-  if (!n || n.length > 40 || n.indexOf(' \u2014 ') >= 0) throw new Error('A document number (up to 40 characters) is required.');
+  if (!n) return '';
+  if (n.length > 40 || n.indexOf(' \u2014 ') >= 0) throw new Error('The document number can be at most 40 characters.');
   return n;
+}
+
+/** The number the next PO / Challan / RFQ / Job Work Challan will get, for the form to show before saving. It is only really taken when the document is saved. */
+function IM_dgPeek_(d) {
+  var kind = IM_dgText_(d.kind);
+  if (!IM_DOC_TYPES_[kind]) return { ok: false, error: 'Unknown kind.' };
+  var dt; try { dt = d.date ? parseDate(d.date) : new Date(); } catch (e) { dt = new Date(); }
+  return { ok: true, number: IM_docNumber_(kind, dt, false) };
 }
 
 function IM_dgText_(v) { return String(v == null ? '' : v).trim(); }
@@ -272,7 +285,7 @@ function IM_dgCodes_() {
  * An RFQ has no stock effect and IMS has no RFQ register, so "recording" it means: check every line against the masters (the same codes
  * the IMS RFQ form offers) and keep the number in the DocGen log. The number is DocGen's. A new version just re-checks.
  */
-function IM_dgRfq_(d) {
+function IM_dgRfqCheck_(d) {
   var lines = d.lineItems;
   if (!Array.isArray(lines) || !lines.length) throw new Error('At least one line is required.');
   if (lines.length > IM_DG_MAX_LINES) throw new Error('Too many lines.');
@@ -281,8 +294,19 @@ function IM_dgRfq_(d) {
     if (!codes[IM_dgText_(l.itemCode)]) throw new Error('Line ' + (i + 1) + ': ' + IM_dgText_(l.itemCode) + ' is not an IMS item, semi-finished or finished goods code.');
     if (!(Number(l.qty) > 0)) throw new Error('Line ' + (i + 1) + ': quantity must be above zero.');
   });
-  var n = IM_dgNumber_(d);
-  return { success: true, code: n, message: 'RFQ ' + n + ' recorded (' + lines.length + ' lines).' };
+  return lines.length;
+}
+function IM_dgRfq_(d) {
+  var count = IM_dgRfqCheck_(d), n = IM_dgNumber_(d);
+  if (!n) {   // IMS issues it: TSP/RFQ/26-27/015
+    var lock = LockService.getDocumentLock(); lock.waitLock(15000);
+    try { n = IM_docNumber_('RFQ', parseDate(d.date), true); } finally { lock.releaseLock(); }
+  }
+  return { success: true, code: n, message: 'RFQ ' + n + ' recorded (' + count + ' lines).' };
+}
+function IM_dgReviseRfq_(d, number) {
+  var count = IM_dgRfqCheck_(d);
+  return { success: true, code: number, message: 'RFQ ' + number + ' updated (' + count + ' lines).' };
 }
 
 // ---------------------------------------------------------------- Job Work Challan (material sent to a job worker: stock goes down)

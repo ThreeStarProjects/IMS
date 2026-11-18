@@ -865,7 +865,7 @@ function addRfq(d) {
 function postRfqRows(formData) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const dateObj = parseDate(formData.date);
-  const rfqNo = getNextCounter('Next RFQ Counter', 'RFQ', 4);
+  const rfqNo = IM_docNumber_('RFQ', dateObj, true);   // TSP/RFQ/26-27/015
 
   // Build one lookup that covers all three master types. Photos + descriptions
   // all live in col B / C respectively on each master, so a unified per-code lookup works.

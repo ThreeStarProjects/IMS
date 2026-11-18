@@ -382,7 +382,7 @@ function postJobWorkOutwardRows(formData) {
       const taken = reg.getLastRow() >= 2 && reg.getRange(2, 2, reg.getLastRow() - 1, 1).getValues().some(function(r) { return r[0] === jwcNo; });
       if (taken) throw new Error('Job Work Challan No "' + jwcNo + '" already exists in IMS.');
     } else {
-      jwcNo = getNextCounter('Next Job Work Challan Counter', 'JWC', 4);
+      jwcNo = IM_docNumber_('JWC', dateObj, true);   // TSP/JW/26-27/007
     }
     const startRow = nextRowByCol(reg, 1);
     const rows = [];
@@ -579,7 +579,7 @@ function postPoRows(formData) {
       const taken = poReg.getLastRow() >= 2 && poReg.getRange(2, 2, poReg.getLastRow() - 1, 1).getValues().some(function(r) { return r[0] === poNo; });
       if (taken) throw new Error('PO No "' + poNo + '" already exists in IMS.');
     } else {
-      poNo = getNextCounter('Next PO Counter', 'PO', 4);
+      poNo = IM_docNumber_('PO', dateObj, true);   // TSP/PO/26-27/043
     }
 
     // Build line rows first so we know the grand total
@@ -716,13 +716,7 @@ function _fiscalYear(d) {
 
 function _nextDcNo(dateObj) {
   // Caller (postFgDeliveryRows) already holds LockService.getDocumentLock().
-  const fy = _fiscalYear(dateObj);
-  const key = 'DC Counter ' + fy;
-  let cur = Number(getConfig(key)) || 0;
-  cur += 1;
-  setConfig(key, cur);
-  const prefix = getConfig('DC No Prefix') || 'TSP';
-  return prefix + '/' + fy + '/' + String(cur).padStart(3, '0');
+  return IM_docNumber_('DC', dateObj, true);   // TSP/DC/26-27/089 (the standard format; continues the old DC counter)
 }
 
 function postFgDeliveryRows(formData) {
