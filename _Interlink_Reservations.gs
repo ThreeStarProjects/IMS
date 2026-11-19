@@ -300,6 +300,9 @@ function IM_processReservationRequestsLocked_() {
  * 1-minute trigger. The ONLY action is "requisition": a normal Material Requisition (the real postRequisitionRows,
  * so reservations are consumed and stock moves exactly as for a person). Guards: the project must contain
  * "ZZ-SELFTEST", the item must exist in Item Master, qty 0 < n <= 5. Anything else is refused.
+ * More actions, same guards, all through the real code: "reserve" (addReservation), "dc" (addFgDelivery: one Customer challan
+ * with a Main line + the item as a Hardware line), "return" (addSiteReturn on that challan's hardware line) and "dcnet"
+ * (read-only: the net hardware the project views / Finance count for the project).
  */
 function IM_processSelfTestCommands_() {
   var sh = SpreadsheetApp.getActive().getSheetByName('_SelfTest_Cmd');
@@ -310,14 +313,37 @@ function IM_processSelfTestCommands_() {
     var status = 'Done', result = '';
     try {
       var p = JSON.parse(r[2]), qty = Number(p.qty);
-      if (r[1] !== 'requisition') throw new Error('Unknown action: ' + r[1]);
+      var act = r[1], known = { requisition: 1, reserve: 1, dc: 1, 'return': 1, dcnet: 1 };
+      if (!known[act]) throw new Error('Unknown action: ' + act);
       if (String(p.project).indexOf('ZZ-SELFTEST') < 0) throw new Error('Refused: project is not a ZZ-SELFTEST project');
-      if (!(qty > 0 && qty <= 5)) throw new Error('Refused: qty must be 1-5');
-      var items = SpreadsheetApp.getActive().getSheetByName('Item Master');
-      if (!items || !getRowByCode(items, p.itemCode)) throw new Error('Item not found: ' + p.itemCode);
-      var out = postRequisitionRows({ date: new Date(), project: p.project, takenBy: 'self-test', skipPdf: true,
-        lineItems: [{ itemCode: p.itemCode, qty: qty, purpose: 'Self-test', remarks: 'ZZ-SELFTEST' }] });
-      result = out.reqNo;
+      var ss0 = SpreadsheetApp.getActive();
+      if (act === 'dcnet') {   // read-only
+        result = String(_dcHardwareForProject_(ss0, String(p.project).trim().toLowerCase()).reduce(function (n, l) { return n + l.qty; }, 0));
+      } else if (act === 'return') {
+        if (!(qty > 0 && qty <= 5)) throw new Error('Refused: qty must be 1-5');
+        var ret = addSiteReturn({ dcNo: p.dcNo, date: new Date(), lineReturns: [{ lineNo: p.lineNo, returnedQty: qty }] });
+        if (!ret.success) throw new Error(ret.message);
+        result = 'returned ' + qty;
+      } else {
+        if (!(qty > 0 && qty <= 5)) throw new Error('Refused: qty must be 1-5');
+        var items = ss0.getSheetByName('Item Master');
+        if (!items || !getRowByCode(items, p.itemCode)) throw new Error('Item not found: ' + p.itemCode);
+        if (act === 'requisition') {
+          result = postRequisitionRows({ date: new Date(), project: p.project, takenBy: 'self-test', skipPdf: true,
+            lineItems: [{ itemCode: p.itemCode, qty: qty, purpose: 'Self-test', remarks: 'ZZ-SELFTEST' }] }).reqNo;
+        } else if (act === 'reserve') {
+          var rs = addReservation({ date: new Date(), code: p.itemCode, qty: qty, forRef: p.project + ' / HW-999', notes: 'Self-test' });
+          if (!rs.success) throw new Error(rs.message);
+          result = rs.code;
+        } else {   // dc: a manual number so no real DC number is used up
+          var dc = addFgDelivery({ date: new Date(), deliveryType: 'Customer', customerName: 'ZZ-SELFTEST', project: p.project, billTo: 'ZZ-SELFTEST',
+            manualDcNo: 'ZZ-SELFTEST-DC-' + Date.now(), skipPdf: true, bypassStockCheck: true,
+            mainItems: [{ description: 'ZZ selftest main item', qty: 1, uom: 'Nos' }],
+            hardwareItems: [{ itemCode: p.itemCode, description: 'ZZ selftest hardware', qty: qty, uom: 'Nos' }] });
+          if (!dc.success) throw new Error(dc.message);
+          result = dc.code;
+        }
+      }
     } catch (e) { status = 'Error'; result = e.message; }
     sh.getRange(i + 2, 4, 1, 2).setValues([[status, result]]);
     done++;
