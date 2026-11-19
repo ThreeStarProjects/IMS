@@ -125,6 +125,21 @@ function IM_dgNextVersion_(no) {
   return base + (carry ? 'A' : '') + out;
 }
 
+/** The number a document is stored under in column `col` of `sh`: exactly `no`, or (DocGen holding an older version) its current version. */
+function IM_dgResolve_(sh, col, no) {
+  if (!sh || sh.getLastRow() < 2) return no;
+  var v = sh.getRange(2, col, sh.getLastRow() - 1, 1).getValues(), fam = IM_dgFamily_(no), alt = '';
+  for (var i = 0; i < v.length; i++) { if (v[i][0] === no) return no; if (!alt && IM_dgFamily_(v[i][0]) === fam) alt = v[i][0]; }
+  return alt || no;
+}
+/** Rename every row of `sh` whose column `col` is `from` (a new version letter). Refuses to take a number that exists. */
+function IM_dgRename_(sh, col, from, to) {
+  if (!sh || sh.getLastRow() < 2) return;
+  var v = sh.getRange(2, col, sh.getLastRow() - 1, 1).getValues();
+  if (v.some(function (r) { return r[0] === to; })) throw new Error(to + ' already exists in IMS.');
+  v.forEach(function (r, i) { if (r[0] === from) sh.getRange(i + 2, col).setValue(to); });
+}
+
 /**
  * kind 'PO' | 'DC'. create(d) -> { success, code, message, needsConfirm?, warnings? } is a NEW document (idempotent by docRef).
  * When d.imsNumber is given it is a NEW VERSION of a document DocGen already recorded: revise(d, number) replaces that document's lines
@@ -149,7 +164,7 @@ function IM_dgRecord_(kind, d, create, revise) {
       var mine = rows.filter(function (x) { return x[1] === kind && IM_dgFamily_(x[2]) === fam; });   // every version of this document, oldest first
       if (!mine.length) return { ok: false, error: number + ' was not recorded through DocGen, so DocGen cannot change it. Amend it in IMS.' };
       if (mine[mine.length - 1][4] === digest) return { ok: true, number: mine[mine.length - 1][2], already: true };   // same content as the latest version: nothing to do (and DocGen learns the current number)
-      r = revise(d, number);
+      r = revise(d, mine[mine.length - 1][2]);   // always the latest version's number, even if DocGen still holds an older one
     } else {
       r = create(d);
     }
@@ -261,6 +276,7 @@ function IM_dgReviseDc_(d, dcNo) {
   var main = d.mainItems, hw = d.hardwareItems || [];
   if (!Array.isArray(main) || !main.length) throw new Error('At least one main item is required.');
   if (main.length + hw.length > IM_DG_MAX_LINES) throw new Error('Too many lines.');
+  dcNo = IM_dgResolve_(reg, 2, dcNo);
   var lock = LockService.getDocumentLock(); lock.waitLock(15000);
   try {
     var regRow = -1;
@@ -302,7 +318,10 @@ function IM_dgReviseDc_(d, dcNo) {
     var list = Object.keys(codes);
     updateSfgSnapshotsBatch(list.filter(function (c) { return sfg && getRowByCode(sfg, c); }));
     updateItemSnapshotsBatch(list.filter(function (c) { return items && getRowByCode(items, c); }));
-    return { success: true, code: dcNo, message: 'Challan ' + dcNo + ' updated (' + all.length + ' lines).' };
+    // the edited challan becomes the next version (043 -> 043A -> 043B): the SAME challan renamed (register + lines), so nothing is counted twice
+    var nextDc = IM_dgNextVersion_(dcNo);
+    IM_dgRename_(reg, 2, dcNo, nextDc); IM_dgRename_(ls, 1, dcNo, nextDc);
+    return { success: true, code: nextDc, message: 'Challan ' + dcNo + ' updated: now version ' + nextDc + ' (' + all.length + ' lines).' };
   } finally { lock.releaseLock(); }
 }
 
@@ -337,8 +356,8 @@ function IM_dgRfq_(d) {
   return { success: true, code: n, message: 'RFQ ' + n + ' recorded (' + count + ' lines).' };
 }
 function IM_dgReviseRfq_(d, number) {
-  var count = IM_dgRfqCheck_(d);
-  return { success: true, code: number, message: 'RFQ ' + number + ' updated (' + count + ' lines).' };
+  var count = IM_dgRfqCheck_(d), next = IM_dgNextVersion_(number);   // IMS keeps no RFQ rows: the new version is the number in the DocGen log
+  return { success: true, code: next, message: 'RFQ ' + number + ' updated: now version ' + next + ' (' + count + ' lines).' };
 }
 
 // ---------------------------------------------------------------- Job Work Challan (material sent to a job worker: stock goes down)
@@ -362,6 +381,7 @@ function IM_dgJwc_(d) {
  */
 function IM_dgReviseJwc_(d, jwcNo) {
   var ss = SpreadsheetApp.getActive(), reg = ss.getSheetByName('Job Work Outward Register'), lines = IM_dgJwcLines_(d);
+  jwcNo = IM_dgResolve_(reg, 2, jwcNo);
   var all = reg && reg.getLastRow() >= 2 ? reg.getRange(2, 1, reg.getLastRow() - 1, 17).getValues() : [];
   var rowNos = [], old = [];
   all.forEach(function (r, i) { if (r[1] === jwcNo) { rowNos.push(i + 2); old.push(r); } });
@@ -391,7 +411,8 @@ function IM_dgReviseJwc_(d, jwcNo) {
   }
   var gone = old.map(function (r) { return r[6]; }).filter(function (c) { return !lines.some(function (l) { return l.sfgCode === c; }); });
   if (gone.length) refresh(gone);
-  return { success: true, code: jwcNo, message: 'Job Work Challan ' + jwcNo + ' updated (' + res.rows + ' lines).' };
+  var nextJ = IM_dgNextVersion_(jwcNo); IM_dgRename_(reg, 2, jwcNo, nextJ);   // the SAME challan renamed to its next version
+  return { success: true, code: nextJ, message: 'Job Work Challan ' + jwcNo + ' updated: now version ' + nextJ + ' (' + res.rows + ' lines).' };
 }
 
 // ---------------------------------------------------------------- photos (pictures inside sheet cells, shrunk for DocGen)
