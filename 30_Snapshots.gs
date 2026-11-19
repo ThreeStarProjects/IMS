@@ -1485,6 +1485,24 @@ function createDraftPoFromReorder() {
 
 
 
+// Hardware sent to a project on a Customer Delivery Challan counts as consumed there, NET of what was returned (delivered - returned).
+// Lines without an item code are skipped (they never touched stock). Internal DCs are skipped. Project = the DC's Project, same text match as requisitions.
+function _dcHardwareForProject_(ss, projLower) {
+  const reg = ss.getSheetByName('FG Delivery Register'), dl = ss.getSheetByName('FG Delivery Lines');
+  const out = [];
+  if (!reg || !dl || reg.getLastRow() < 2 || dl.getLastRow() < 2) return out;
+  const dcs = {};
+  reg.getRange(2, 1, reg.getLastRow() - 1, 21).getValues().forEach(function(r) {
+    if (r[1] && String(r[4] || '').trim().toLowerCase() === projLower && String(r[20] || 'Customer') !== 'Internal') dcs[r[1]] = r[2];
+  });
+  dl.getRange(2, 1, dl.getLastRow() - 1, 10).getValues().forEach(function(r) {
+    if (!(r[0] in dcs) || r[2] !== 'Hardware' || !r[3]) return;
+    const qty = (Number(r[5]) || 0) - (Number(r[9]) || 0);
+    if (qty > 0.0001) out.push({ dcNo: r[0], date: dcs[r[0]], code: r[3], desc: r[4] || '', qty: qty, uom: r[6] || '' });
+  });
+  return out;
+}
+
 // ---------- Site Consumption view ----------
 // D1 = project name. Aggregates Requisition rows for that project,
 // pulls avg rate from Inward Register for cost. Shows item-level totals + a
@@ -1510,6 +1528,7 @@ function _renderSiteConsumption(sh, ss, project) {
       add(r[4], r[5], r[6], r[7]);   // Item Code, Desc, Qty, UOM
     });
   }
+  _dcHardwareForProject_(ss, proj).forEach(function(l) { add(l.code, l.desc, l.qty, l.uom); });   // hardware sent on DCs, net of returns
 
   const rows = Object.keys(agg).map(function(k) {
     const r = agg[k];
@@ -1548,17 +1567,20 @@ function _renderProjectReqs(sh, ss, project) {
   if (!project) return;
   const proj = String(project).trim().toLowerCase();
   const req = ss.getSheetByName('Material Requisition Register');
-  if (!req || req.getLastRow() < 2) {
+  const dcHw = _dcHardwareForProject_(ss, proj);
+  if ((!req || req.getLastRow() < 2) && !dcHw.length) {
     sh.getRange('A3').setValue('Requisition Register empty.').setFontStyle('italic');
     return;
   }
   const rate = _canonicalAvgRateMap(ss);
   // Req cols: A=Sr, B=ReqNo, C=Date, D=Project, E=ItemCode, F=ItemDesc,
   //           G=Qty, H=UOM, I=Purpose, J=RequestedBy, K=TakenBy, L=PDF, M=Remarks
-  const data = req.getRange(2, 1, req.getLastRow() - 1, 15).getValues();
+  const data = (req && req.getLastRow() >= 2) ? req.getRange(2, 1, req.getLastRow() - 1, 15).getValues() : [];
   const matched = data.filter(function(r) {
     return String(r[3] || '').trim().toLowerCase() === proj;
   });
+  // hardware sent on Delivery Challans (net of returns) shown as lines of their own, in the same shape as a requisition row
+  dcHw.forEach(function(l) { const r = new Array(15).fill(''); r[2] = l.date; r[1] = l.dcNo; r[4] = l.code; r[5] = l.desc; r[6] = l.qty; r[7] = l.uom; r[8] = 'Sent on DC (net of returns)'; matched.push(r); });
   // Sort newest first so recent requisitions surface
   matched.sort(function(a, b) {
     const ad = (a[2] instanceof Date) ? a[2].getTime() : 0;
