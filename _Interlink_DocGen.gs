@@ -46,6 +46,7 @@ function IM_dgHandle_(body) {
   if (!IM_dgSame_(body && body.secret, secret)) return { ok: false, error: 'Wrong key.' };
   var d = (body && body.data) || {};
   switch (body.action) {
+    case 'projects': return { ok: true, projects: IM_dgProjects_() };   // just the project list, read from Masters right now (no caches): fast, so DocGen asks on every form
     case 'feeds':    if (d && d.refresh === true) { try { IM_clearCache(); } catch (e) {} }   // 'refresh': forget IMS's 5-minute copy of the Masters lists first
                      return { ok: true, feeds: IM_dgFeeds_() };
     case 'peek':     return IM_dgPeek_(d);
@@ -69,6 +70,12 @@ function IM_dgRows_(sheetName) {
   var v = sh.getRange(1, 1, sh.getLastRow(), sh.getLastColumn()).getValues();
   return { hdr: v[0].map(function (h) { return String(h).trim(); }), rows: v.slice(1) };
 }
+/** The active projects straight from Masters (never from IMS's 5-minute copy), as { code, name, label: 'PRJ-001 - Name' }. */
+function IM_dgProjects_() {
+  var t = function (v) { return String(v == null ? '' : v).trim(); };
+  return (Masters.getProjects() || []).filter(function (p) { return t(p.Name) && String(p['Active?'] || 'Yes').toLowerCase() !== 'no'; })
+    .map(function (p) { return { code: t(p.Project_ID), name: t(p.Name), label: t(p.Project_ID) + ' \u2014 ' + t(p.Name) }; });
+}
 function IM_dgFeeds_() {
   var t = function (v) { return String(v == null ? '' : v).trim(); };
   var sup = IM_dgRows_('Supplier Master'), s = function (names) { return IM_dgCol_(sup.hdr, names); };
@@ -91,8 +98,7 @@ function IM_dgFeeds_() {
     return acc;
   }, []);
   var customers = IM_customerPicks_().map(function (c) { return { name: c.name, legalName: c.legal, gst: c.gstin, billAddress: c.bill, shipAddress: c.ship, paymentTerms: c.terms }; });
-  var projects = (IM_getProjects() || []).filter(function (p) { return t(p.Name) && String(p['Active?'] || 'Yes').toLowerCase() !== 'no'; })
-    .map(function (p) { return { code: t(p.Project_ID), name: t(p.Name), label: t(p.Project_ID) + ' — ' + t(p.Name) }; });
+  var projects = IM_dgProjects_();   // straight from Masters, never IMS's 5-minute copy
   var jwm = IM_dgRows_('Job Worker Master'), w = function (names) { return IM_dgCol_(jwm.hdr, names); };
   var wC = w(['Job Worker Code']), wN = w(['Firm Name']), wP = w(['Process Type']), wCp = w(['Contact Person']), wM = w(['Mobile No']), wE = w(['Email']), wG = w(['GST No']), wA = w(['Address']), wAct = w(['Active?']);
   var jobWorkers = jwm.rows.filter(function (r) { return t(r[wC]) && t(r[wN]) && r[wAct] !== false && String(r[wAct]).toLowerCase() !== 'false'; }).map(function (r) {
