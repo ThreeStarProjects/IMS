@@ -46,7 +46,8 @@ function IM_dgHandle_(body) {
   if (!IM_dgSame_(body && body.secret, secret)) return { ok: false, error: 'Wrong key.' };
   var d = (body && body.data) || {};
   switch (body.action) {
-    case 'feeds':    return { ok: true, feeds: IM_dgFeeds_() };
+    case 'feeds':    if (d && d.refresh === true) { try { IM_clearCache(); } catch (e) {} }   // 'refresh': forget IMS's 5-minute copy of the Masters lists first
+                     return { ok: true, feeds: IM_dgFeeds_() };
     case 'peek':     return IM_dgPeek_(d);
     case 'recordPo': return IM_dgRecord_('PO', d, IM_dgPo_, IM_dgRevisePo_);
     case 'recordDc': return IM_dgRecord_('DC', d, IM_dgDc_, IM_dgReviseDc_);
