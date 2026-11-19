@@ -785,7 +785,7 @@ function addRequisitionMultiLine(d) {
     });
     // Overselling preflight — skip if client already confirmed
     if (!d.bypassStockCheck) {
-      const check = _checkStockAvailability(d.lineItems.map(function(l) { return { code: l.itemCode, qty: l.qty }; }));
+      const check = _checkStockAvailability(d.lineItems.map(function(l) { return { code: l.itemCode, qty: l.qty }; }), d.project);
       if (!check.ok) return { success: false, needsConfirm: true, warnings: check.warnings, message: 'Some lines exceed Available stock. Confirm to proceed anyway.' };
     }
     const res = postRequisitionRows(d);
@@ -1113,7 +1113,9 @@ function addBulkAdjustment(d) {
 
 // lines: array of { code, qty } — checks each against Available on-hand.
 // masters: 'rm' (Item Master) or 'sfg' (SFG Master) — determines which snapshot section to read.
-function _checkStockAvailability(lines) {
+// project (optional): what THIS project has reserved is stock it may use, so it is added back (Available = physical - ALL reservations, which
+// would otherwise block a project from issuing the very stock it reserved: 10 in store, 10 reserved for it, issuing 10 is fine).
+function _checkStockAvailability(lines, project) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const snap = ss.getSheetByName('Stock Snapshot');
   if (!snap) return { ok: true, warnings: [] };  // Fresh install, no snapshot yet
@@ -1136,6 +1138,15 @@ function _checkStockAvailability(lines) {
   // Pull descriptions once for helpful warning text
   const descMap = _buildDescMap(ss);
 
+  const own = {};   // code -> still held by an open reservation of this project
+  const rsv = project ? ss.getSheetByName('Reservation Register') : null;
+  if (rsv && rsv.getLastRow() >= 2) {
+    rsv.getRange(2, 1, rsv.getLastRow() - 1, 15).getValues().forEach(function(r) {
+      if (!r[3] || !IM_isOpenRsv_(r[8]) || !IM_sameProject_(project, r[7])) return;
+      own[r[3]] = (own[r[3]] || 0) + Math.max(0, (Number(r[5]) || 0) - (Number(r[14]) || 0));
+    });
+  }
+
   const warnings = [];
   const totals = {};
   lines.forEach(function(l) {
@@ -1149,6 +1160,7 @@ function _checkStockAvailability(lines) {
     else if (sfgAvail[code] != null) { available = sfgAvail[code]; section = 'SFG'; }
     else if (fgAvail[code]  != null) { available = fgAvail[code];  section = 'FG';  }
     else return;  // Code not in any master — new/manual item, skip check
+    available += own[code] || 0;
     // Round to 4 dp — avoids false positives on floating-point noise (10.0000001 vs 10).
     if (Math.round(requested * 10000) > Math.round(available * 10000)) {
       warnings.push({
@@ -2032,7 +2044,7 @@ function addFgDelivery(d) {
         .filter(function(l) { return l.itemCode && Number(l.qty) > 0; })
         .map(function(l) { return { code: l.itemCode, qty: l.qty }; });
       if (allLines.length) {
-        const check = _checkStockAvailability(allLines);
+        const check = _checkStockAvailability(allLines, d.project);
         if (!check.ok) return { success: false, needsConfirm: true, warnings: check.warnings, message: 'Some lines exceed Available stock. Confirm to proceed anyway.' };
       }
     }

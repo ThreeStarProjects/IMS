@@ -254,7 +254,7 @@ function IM_dgReviseDc_(d, dcNo) {
     if (d.bypassStockCheck !== true) {
       var newQty = {}; all.forEach(function (l) { if (l.code) newQty[l.code] = (newQty[l.code] || 0) + l.qty; });
       var extra = Object.keys(newQty).map(function (c) { return { code: c, qty: newQty[c] - (oldQty[c] || 0) }; }).filter(function (x) { return x.qty > 0; });
-      if (extra.length) { var chk = _checkStockAvailability(extra); if (!chk.ok) return { success: false, needsConfirm: true, warnings: chk.warnings, message: 'Some lines exceed Available stock. Confirm to proceed anyway.' }; }
+      if (extra.length) { var chk = _checkStockAvailability(extra, t(d.project)); if (!chk.ok) return { success: false, needsConfirm: true, warnings: chk.warnings, message: 'Some lines exceed Available stock. Confirm to proceed anyway.' }; }
     }
 
     oldRows.reverse().forEach(function (r) { ls.deleteRow(r); });
@@ -266,6 +266,10 @@ function IM_dgReviseDc_(d, dcNo) {
     ]]);
 
     all.forEach(function (l) { if (l.code) codes[l.code] = 1; });
+    // only the EXTRA quantity is a new outward: it consumes the project's open reservations (the rest was handled when the challan was first made)
+    var addQ = {}; all.forEach(function (l) { if (l.code) addQ[l.code] = (addQ[l.code] || 0) + l.qty; });
+    var addLines = Object.keys(addQ).map(function (c) { return { itemCode: c, qty: addQ[c] - (oldQty[c] || 0) }; }).filter(function (x) { return x.qty > 0; });
+    if (addLines.length) IM_consumePmReservations_(t(d.project), addLines, dcNo, null);
     var sfg = ss.getSheetByName('SFG Master'), items = ss.getSheetByName('Item Master');
     var list = Object.keys(codes);
     updateSfgSnapshotsBatch(list.filter(function (c) { return sfg && getRowByCode(sfg, c); }));

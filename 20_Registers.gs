@@ -794,6 +794,11 @@ function postFgDeliveryRows(formData) {
     });
     if (lineRows.length) lines.getRange(lineStart, 1, lineRows.length, 10).setValues(lineRows);
 
+    // A Delivery Challan is an outward event: it consumes the same project's open reservations of the items it sends (never throws),
+    // exactly as a Material Requisition does. Without this the goods left stock AND stayed reserved, so Available was short twice.
+    IM_consumePmReservations_(formData.project, allLines.filter(function(l) { return l.code && l.qty > 0; })
+      .map(function(l) { return { itemCode: l.code, qty: l.qty }; }), dcNo, null);
+
     // Stock refresh:
     //   FG main lines → FG Master On Hand formula auto-updates
     //   Main lines that are actually SFG codes → refresh SFG snapshot (fgDelMain deducts)
