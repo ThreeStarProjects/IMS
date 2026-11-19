@@ -114,6 +114,17 @@ function IM_dgDigest_(d) {
   return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(c)));
 }
 
+/** TSP/PO/26-27/043, 043A, 043B all belong to one document: the "family" is the number without its version letters. */
+function IM_dgFamily_(no) { var m = /^(.*\d)[A-Z]*$/.exec(String(no || '')); return m ? m[1] : String(no || ''); }
+/** The next version of a number: 043 -> 043A -> 043B ... 043Z -> 043AA. */
+function IM_dgNextVersion_(no) {
+  var m = /^(.*\d)([A-Z]*)$/.exec(String(no || '')), base = m ? m[1] : String(no), s = m ? m[2] : '';
+  if (!s) return base + 'A';
+  var out = '', carry = true;
+  for (var i = s.length - 1; i >= 0; i--) { var c = s.charCodeAt(i) - 65; if (carry) { c++; carry = c > 25; if (carry) c = 0; } out = String.fromCharCode(65 + c) + out; }
+  return base + (carry ? 'A' : '') + out;
+}
+
 /**
  * kind 'PO' | 'DC'. create(d) -> { success, code, message, needsConfirm?, warnings? } is a NEW document (idempotent by docRef).
  * When d.imsNumber is given it is a NEW VERSION of a document DocGen already recorded: revise(d, number) replaces that document's lines
@@ -130,13 +141,14 @@ function IM_dgRecord_(kind, d, create, revise) {
     if (!number) {
       // The same DocGen id again (a retry after a later step failed). Same content = nothing to do. Changed content (the user fixed the
       // form and saved again) = a new version of that document, never a silent "already done" that would leave IMS with the old lines.
-      var hit = rows.filter(function (x) { return x[0] === ref && x[1] === kind; })[0];
+      var hit = rows.filter(function (x) { return x[0] === ref && x[1] === kind; }).pop();   // the latest one (a PO may have become 043A, 043B ...)
       if (hit) { if (hit[4] === digest) return { ok: true, number: hit[2], already: true }; number = hit[2]; }
     }
     if (number) {
-      var mine = rows.filter(function (x) { return x[1] === kind && x[2] === number; });
+      var fam = IM_dgFamily_(number);
+      var mine = rows.filter(function (x) { return x[1] === kind && IM_dgFamily_(x[2]) === fam; });   // every version of this document, oldest first
       if (!mine.length) return { ok: false, error: number + ' was not recorded through DocGen, so DocGen cannot change it. Amend it in IMS.' };
-      if (mine[mine.length - 1][4] === digest) return { ok: true, number: number, already: true };
+      if (mine[mine.length - 1][4] === digest) return { ok: true, number: mine[mine.length - 1][2], already: true };   // same content as the latest version: nothing to do (and DocGen learns the current number)
       r = revise(d, number);
     } else {
       r = create(d);
@@ -210,8 +222,10 @@ function IM_dgRevisePo_(d, poNo) {
   var lines = d.lineItems, ss = SpreadsheetApp.getActive(), t = IM_dgText_;
   if (!Array.isArray(lines) || !lines.length) throw new Error('At least one line is required.');
   var reg = ss.getSheetByName('Purchase Order Register'), pl = ss.getSheetByName('PO Lines');
-  var head = reg && reg.getLastRow() >= 2 ? reg.getRange(2, 1, reg.getLastRow() - 1, 7).getValues().filter(function (r) { return r[1] === poNo; })[0] : null;
+  var regRows = reg && reg.getLastRow() >= 2 ? reg.getRange(2, 1, reg.getLastRow() - 1, 7).getValues() : [];
+  var head = regRows.filter(function (r) { return r[1] === poNo; })[0] || regRows.filter(function (r) { return IM_dgFamily_(r[1]) === IM_dgFamily_(poNo); })[0];   // DocGen may still hold an older version's number
   if (!head) throw new Error('PO ' + poNo + ' not found in IMS.');
+  poNo = head[1];
   if (head[3] !== t(d.supplierCode)) throw new Error('The supplier of ' + poNo + ' cannot be changed. Make a new PO instead.');
   if (pl && pl.getLastRow() >= 2 && pl.getRange(2, 1, pl.getLastRow() - 1, 13).getValues().some(function (r) { return r[0] === poNo && Number(r[12]) > 0; }))
     throw new Error(poNo + ' already has goods received against it, so it cannot be changed from DocGen. Amend it in IMS.');
@@ -221,7 +235,21 @@ function IM_dgRevisePo_(d, poNo) {
   });
   if (res.needsConfirm) throw new Error(res.message + ' Amend it in IMS.');
   if (!res.success) throw new Error(res.message);
-  return { success: true, code: poNo, message: res.message };
+  // The edited PO becomes the next version: TSP/PO/26-27/043 -> 043A -> 043B. It is the SAME PO renamed (no second copy), so the GRN picker
+  // lists only the latest version, with its latest lines. (No goods can have been received, that was refused above.)
+  var next = IM_dgNextVersion_(poNo), lock = LockService.getDocumentLock(); lock.waitLock(15000);
+  try {
+    if (regRows.some(function (r) { return r[1] === next; })) throw new Error(next + ' already exists in IMS.');
+    var hr = reg.getRange(2, 2, reg.getLastRow() - 1, 1).getValues(), hit = -1;
+    hr.forEach(function (r, i) { if (r[0] === poNo) hit = i + 2; });
+    if (hit < 0) throw new Error('PO ' + poNo + ' not found in IMS.');
+    reg.getRange(hit, 2).setValue(next);
+    if (pl && pl.getLastRow() >= 2) {
+      var pr = pl.getRange(2, 1, pl.getLastRow() - 1, 1).getValues();
+      pr.forEach(function (r, i) { if (r[0] === poNo) pl.getRange(i + 2, 1).setValue(next); });
+    }
+  } finally { lock.releaseLock(); }
+  return { success: true, code: next, message: poNo + ' updated: now version ' + next + '.' };
 }
 
 /**
