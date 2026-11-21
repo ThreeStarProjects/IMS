@@ -793,6 +793,7 @@
     <span class="mode-label">Mode:</span>
     <label class="inline-toggle"><input type="radio" name="res-mode" value="new" checked onchange="onReservationModeChange()"> <b>New Reservation</b> — soft-lock stock</label>
     <label class="inline-toggle"><input type="radio" name="res-mode" value="release" onchange="onReservationModeChange()"> <b>Release / Consume</b> — update existing</label>
+    <label class="inline-toggle"><input type="radio" name="res-mode" value="project" onchange="onReservationModeChange()"> <b>By Project</b> — reserved, used, remaining</label>
   </div>
 
   <!-- MODE: NEW -->
@@ -834,11 +835,31 @@
     </div>
   </div>
 
+  <!-- MODE: BY PROJECT (read only) -->
+  <div id="res-project-block" style="display:none;">
+    <p class="hint">Pick a project to see everything reserved for it: how much was reserved, how much is used (consumed by requisitions / challans), what was given back, and what is still held.</p>
+    <div class="grid2">
+      <div class="fg" style="grid-column: 1/-1"><label>Project</label>
+        <select id="rproj-picker" onchange="loadProjectReservations()"><option value="">-- pick project --</option></select>
+      </div>
+    </div>
+    <div id="rproj-summary" class="hint" style="margin:6px 0;"></div>
+    <div style="overflow:auto; max-height:360px;">
+      <table id="rproj-table" style="width:100%; border-collapse:collapse; font-size:12px; display:none;">
+        <thead><tr style="background:#1F4E79; color:#fff; position:sticky; top:0;">
+          <th style="text-align:left; padding:6px;">Item</th><th style="text-align:right; padding:6px;">Reserved</th><th style="text-align:right; padding:6px;">Used</th>
+          <th style="text-align:right; padding:6px;">Given back</th><th style="text-align:right; padding:6px;">Remaining</th><th style="padding:6px;">Status</th><th style="text-align:left; padding:6px;">Res No</th>
+        </tr></thead>
+        <tbody id="rproj-body"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="btn-row">
     <span class="loading" id="ares-loading">Saving reservation...</span>
     <span class="loading" id="rres-loading">Updating...</span>
     <button class="btn-secondary" onclick="closeForm()">Cancel</button>
-    <button class="btn-primary" onclick="submitReservation()">Save</button>
+    <button class="btn-primary" id="res-save" onclick="submitReservation()">Save</button>
   </div>
 </div>
 
@@ -2927,6 +2948,9 @@ function onReservationModeChange() {
   const mode = _resMode();
   document.getElementById('res-new-block').style.display     = (mode === 'new')     ? '' : 'none';
   document.getElementById('res-release-block').style.display = (mode === 'release') ? '' : 'none';
+  document.getElementById('res-project-block').style.display = (mode === 'project') ? '' : 'none';
+  document.getElementById('res-save').style.display = (mode === 'project') ? 'none' : '';   // the project view only shows; nothing to save
+  if (mode === 'project') loadReservationProjects();
   if (mode === 'release') {
     const sel = document.getElementById('rres-picker');
     // Only (re)load if empty — avoids wiping a user's selection on tab back-and-forth
@@ -2958,6 +2982,50 @@ function loadActiveReservations() {
     })
     .withFailureHandler(function(e) { sel.innerHTML = '<option value="">Error: ' + e.message + '</option>'; })
     .getActiveReservations();
+}
+
+function loadReservationProjects() {
+  const sel = document.getElementById('rproj-picker'), keep = sel.value;
+  sel.innerHTML = '<option value="">-- loading --</option>';
+  google.script.run
+    .withSuccessHandler(function(list) {
+      sel.innerHTML = '<option value="">-- pick project --</option>';
+      (list || []).forEach(function(p) {
+        const opt = document.createElement('option');
+        opt.value = p.key; opt.textContent = p.label + '  (' + p.open + ' open of ' + p.total + ')';
+        sel.appendChild(opt);
+      });
+      if (keep) { sel.value = keep; loadProjectReservations(); }
+      if (!list || !list.length) sel.innerHTML = '<option value="">(No reservations yet)</option>';
+    })
+    .withFailureHandler(function(e) { sel.innerHTML = '<option value="">Error: ' + e.message + '</option>'; })
+    .getReservationProjects();
+}
+
+function loadProjectReservations() {
+  const key = v('rproj-picker'), body = document.getElementById('rproj-body'), tbl = document.getElementById('rproj-table'), sum = document.getElementById('rproj-summary');
+  if (!key) { tbl.style.display = 'none'; sum.textContent = ''; return; }
+  sum.textContent = 'Loading...';
+  const esc = function(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+  const colors = { 'Active': '#FFF2CC', 'Partially Consumed': '#FFE5CC', 'Consumed': '#E2F0D9', 'Released': '#EDEDED' };
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) { sum.textContent = (res && res.message) || 'Could not load.'; tbl.style.display = 'none'; return; }
+      sum.textContent = res.lines + ' reservation line(s), ' + res.open + ' still holding stock.';
+      body.innerHTML = res.rows.map(function(r) {
+        return '<tr style="border-bottom:1px solid #e0e4e8;">' +
+          '<td style="padding:5px;"><b>' + esc(r.code) + '</b><br><span style="color:#667;">' + esc(r.desc) + '</span></td>' +
+          '<td style="text-align:right; padding:5px;">' + r.qty + ' ' + esc(r.uom) + '</td>' +
+          '<td style="text-align:right; padding:5px;">' + (r.used || '') + '</td>' +
+          '<td style="text-align:right; padding:5px;">' + (r.released || '') + '</td>' +
+          '<td style="text-align:right; padding:5px; font-weight:bold;">' + (r.remaining || '') + '</td>' +
+          '<td style="text-align:center; padding:5px; background:' + (colors[r.status] || '#fff') + ';">' + esc(r.status) + '</td>' +
+          '<td style="padding:5px;">' + esc(r.resNo) + '<br><span style="color:#667;">' + esc(r.date) + '</span></td></tr>';
+      }).join('');
+      tbl.style.display = res.rows.length ? '' : 'none';
+    })
+    .withFailureHandler(function(e) { sum.textContent = 'Error: ' + e.message; })
+    .getProjectReservations(key);
 }
 
 function onReleaseResPickerChange() {

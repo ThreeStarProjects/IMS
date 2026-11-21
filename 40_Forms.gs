@@ -1266,6 +1266,50 @@ function getActiveReservations() {
   return out.sort(function(a, b) { return a.resNo < b.resNo ? 1 : -1; });
 }
 
+// ---- By project: every reservation of one project with what was reserved, used and what is left (read only) ----
+// A project is one key: its PRJ-### id when the text has one (so "PRJ-002 - Malad" and "PRJ-002 - Malad Residence / HW-003" are the same project), else the lower-cased text.
+function _rsvProjectKey_(forRef) {
+  const s = String(forRef || '').replace(/ \/ HW-\d+$/, '').trim();
+  const m = /PRJ-\d+/i.exec(s);
+  return m ? m[0].toUpperCase() : s.toLowerCase();
+}
+
+// The projects that have at least one reservation: [{ key, label, total, open }], projects with open (still held) reservations first.
+function getReservationProjects() {
+  try {
+    const reg = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Reservation Register');
+    const by = {};
+    if (reg && reg.getLastRow() >= 2) reg.getRange(2, 1, reg.getLastRow() - 1, 15).getValues().forEach(function(r) {
+      if (!r[1] || !r[7] || r[8] === 'Requested' || r[8] === 'Error') return;
+      const key = _rsvProjectKey_(r[7]); if (!key) return;
+      const label = String(r[7]).replace(/ \/ HW-\d+$/, '').trim();
+      const p = by[key] = by[key] || { key: key, label: label, total: 0, open: 0 };
+      if (label.indexOf(' \u2014 ') >= 0 && p.label.indexOf(' \u2014 ') < 0) p.label = label;   // prefer the "PRJ-001 \u2014 Name" spelling
+      p.total++; if (IM_isOpenRsv_(r[8])) p.open++;
+    });
+    return Object.keys(by).map(function(k) { return by[k]; }).sort(function(a, b) { return (b.open > 0) - (a.open > 0) || (a.label.toLowerCase() < b.label.toLowerCase() ? -1 : 1); });
+  } catch (e) { return []; }
+}
+
+// One project's reservations: reserved, used (consumed), released (given back) and remaining (still held) per line.
+function getProjectReservations(key) {
+  try {
+    const want = String(key || '').trim(); if (!want) throw new Error('Pick a project.');
+    const reg = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Reservation Register');
+    const rows = [];
+    if (reg && reg.getLastRow() >= 2) reg.getRange(2, 1, reg.getLastRow() - 1, 15).getValues().forEach(function(r) {
+      if (!r[1] || r[8] === 'Requested' || r[8] === 'Error' || _rsvProjectKey_(r[7]) !== want) return;
+      const qty = Number(r[5]) || 0, used = Math.min(Number(r[14]) || 0, qty), open = IM_isOpenRsv_(r[8]);
+      const remaining = open ? IM_round3_(qty - used) : 0, released = (!open && r[8] === 'Released') ? IM_round3_(qty - used) : 0;
+      rows.push({ resNo: r[1], date: r[2] instanceof Date ? Utilities.formatDate(r[2], Session.getScriptTimeZone(), 'dd-MMM-yy') : String(r[2] || ''),
+                  code: r[3], desc: r[4] || '', uom: r[6] || '', forRef: String(r[7] || ''), qty: qty, used: IM_round3_(used), released: released, remaining: remaining, status: r[8] });
+    });
+    const order = { 'Active': 0, 'Partially Consumed': 1, 'Consumed': 2, 'Released': 3 };
+    rows.sort(function(a, b) { return (order[a.status] - order[b.status]) || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0) || (a.resNo < b.resNo ? -1 : 1); });
+    return { success: true, rows: rows, lines: rows.length, open: rows.filter(function(x) { return x.remaining > 0; }).length };
+  } catch (e) { return { success: false, message: e.message, rows: [] }; }
+}
+
 // Mark reservation as Released or Consumed. Refreshes snapshot for the code.
 // Consumed takes an optional d.qty: less than what is still held leaves it "Partially Consumed".
 // Released frees whatever is still held.
