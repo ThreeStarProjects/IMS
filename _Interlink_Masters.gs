@@ -145,11 +145,54 @@ function IM_checkUnits() {
   return { fixed: fixed, bad: bad };
 }
 
+/**
+ * Menu: Interlink > Check negative stock. For every raw-material item whose Available is below zero it writes a plain report (sheet '_Negative_Stock'):
+ * what is physically in the store, what reservations hold and for which projects, what was issued and to which project text, and what it means.
+ * The usual causes: (1) more was issued than ever received (a missing GRN or opening stock), (2) reservations hold more than the store has, often because
+ * the goods were issued under a different project name than the one reserved for (the reservation is only used up when the same PRJ id / name is on the
+ * requisition or challan). Reads only; nothing is changed.
+ */
+function IM_checkNegativeStock() {
+  var ss = SpreadsheetApp.getActive(), snap = ss.getSheetByName('Stock Snapshot');
+  var rows = _readRmSection(snap, 10).filter(function (r) { return r[0] && Number(r[8]) < -0.0001; });
+  var held = {}, issued = {};
+  var rg = ss.getSheetByName('Reservation Register');
+  if (rg && rg.getLastRow() >= 2) rg.getRange(2, 1, rg.getLastRow() - 1, 15).getValues().forEach(function (r) {
+    if (!IM_isOpenRsv_(r[8])) return;
+    var left = (Number(r[5]) || 0) - (Number(r[14]) || 0); if (left <= 0) return;
+    (held[r[3]] = held[r[3]] || []).push(r[1] + ' ' + String(r[7]).replace(/ \/ HW-\d+$/, '') + ': ' + IM_round3_(left));
+  });
+  var rq = ss.getSheetByName('Material Requisition Register');
+  if (rq && rq.getLastRow() >= 2) rq.getRange(2, 1, rq.getLastRow() - 1, 8).getValues().forEach(function (r) {
+    var m = issued[r[4]] = issued[r[4]] || {}, p = String(r[3] || '(no project)'); m[p] = (m[p] || 0) + (Number(r[6]) || 0);
+  });
+  var sh = ss.getSheetByName('_Negative_Stock') || ss.insertSheet('_Negative_Stock');
+  sh.clear();
+  var head = ['Item Code', 'Description', 'Physical in store', 'Held by reservations', 'Available', 'Reserved for', 'Issued on requisitions (project: qty)', 'What it means'];
+  sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold').setBackground('#1F4E79').setFontColor('#FFFFFF').setWrap(true);
+  var out = rows.map(function (r) {
+    var phys = Number(r[8]) + Number(r[9] || 0), resv = Number(r[9] || 0), code = r[0];
+    var iss = Object.keys(issued[code] || {}).map(function (p) { return p + ': ' + IM_round3_(issued[code][p]); }).join(' | ');
+    var why = phys < -0.0001
+      ? 'The store itself is below zero: more was issued or sent out than was ever received. Look for a missing GRN or opening stock (Adjustment) for this item.'
+      : 'The store has ' + IM_round3_(phys) + ' but reservations hold ' + IM_round3_(resv) + '. If the goods have already gone out, the project they were issued to is probably written differently from the project reserved for, so the reservation was never used up: release it (Reservation form > Release) or issue under the same PRJ id.';
+    return [code, r[1], IM_round3_(phys), IM_round3_(resv), IM_round3_(Number(r[8])), (held[code] || []).join(' | '), iss, why];
+  });
+  if (out.length) sh.getRange(2, 1, out.length, head.length).setValues(out).setWrap(true).setVerticalAlignment('top');
+  [110, 260, 90, 90, 90, 280, 320, 460].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  sh.setFrozenRows(1);
+  try { ss.setActiveSheet(sh); } catch (e) {}
+  var msg = out.length ? out.length + ' item(s) have negative Available stock. The report is in the sheet "_Negative_Stock".' : 'No item has negative Available stock.';
+  try { ss.toast(msg, 'Negative stock', 10); } catch (e) {}
+  return out.length;
+}
+
 function IM_onOpen_() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('🔗 Interlink')
     .addItem('Refresh dropdowns from Masters', 'IM_refreshDropdowns')
     .addItem('Check units (UOM list)',         'IM_checkUnits')
+    .addItem('Check negative stock',           'IM_checkNegativeStock')
     .addItem('➕ Add employee',                'IM_addEmployeeDialog')
     .addItem('Send suppliers and job workers to Masters', 'IM_syncPartiesNow')
     .addItem('DocGen link: show key',            'IM_docgenSetup')
