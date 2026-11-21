@@ -273,6 +273,9 @@ function IM_processReservationRequestsLocked_() {
         if (!mrow) { master = ss.getSheetByName('SFG Master'); mrow = getRowByCode(master, code); if (mrow) kind = 'SFG'; }
         if (!mrow) { master = ss.getSheetByName('FG Master'); mrow = getRowByCode(master, code); if (mrow) kind = 'FG'; }
         if (!mrow) return fail('Code not found: ' + code);
+        // PM read its stock a little while ago (the import can lag): never hold more than is free NOW, or Available goes negative.
+        var chk = _checkStockAvailability([{ code: code, qty: qty }]);
+        if (!chk.ok) return fail('Only ' + chk.warnings[0].available + ' of ' + code + ' is free in IMS right now; PM asked for ' + qty + '. Check the stock (is a GRN missing?) and tick Reserve? again.');
         var resNo = getNextCounter('Next Reservation Counter', 'RSV', 4);
         reg.getRange(row, 2).setValue(resNo);                                  // B Reservation No
         reg.getRange(row, 3).setValue(new Date());                             // C Date

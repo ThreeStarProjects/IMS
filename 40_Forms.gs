@@ -1199,6 +1199,11 @@ function addReservation(d) {
     _require(d, ['date', 'code', 'qty', 'forRef']);
     const qty = Number(d.qty);
     if (!(qty > 0)) throw new Error('Qty must be > 0');
+    // Holding more than the store has free is what makes Available (and PM's In Stock) go negative: ask first. The form re-sends with bypassStockCheck when confirmed.
+    if (!d.bypassStockCheck) {
+      const chk = _checkStockAvailability([{ code: d.code, qty: qty }]);
+      if (!chk.ok) return { success: false, needsConfirm: true, warnings: chk.warnings, message: 'This reservation is more than the free stock, so Available will go below zero.' };
+    }
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const reg = ss.getSheetByName('Reservation Register');
     if (!reg) throw new Error('Reservation Register missing — run Initialize Workbook.');
