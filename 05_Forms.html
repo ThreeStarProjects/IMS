@@ -3229,7 +3229,7 @@ function submitFgDelivery() {
       const remark = remarkCell.querySelector('input').value;
       if (!desc || qty <= 0) return;
       const opt = sel ? sel.selectedOptions[0] : null;
-      const uom = opt ? (opt.dataset.uom || 'Nos') : 'Nos';
+      const uom = opt ? (opt.dataset.uom || 'No.s') : 'No.s';
       out.push({ itemCode: code, description: desc, qty: qty, weight: wt, remark: remark, uom: uom });
     });
     return out;

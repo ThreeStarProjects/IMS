@@ -158,7 +158,7 @@ const DROPDOWN_LISTS = {
     'Grams','Metric Tons','Liters','Milliliters','Bags','Cartons','Drums','Buckets','Cans',
     'Bottles','Pouches','Trays','Pallets','Containers','Loads','Lots','Hours','Days',
     'Services','Jobs','Projects','Kits','Assemblies','Length','Weight','Volume','Area',
-    // Project-Management Hardware List unit names — keep in sync with PM's Unit dropdown.
+    // The ONE unit list of every 3SP system (PM UOM_LIST, DocGen UNITS, Finance _helpers): keep identical. Menu: Interlink > Check units.
     'Sq.ft','Sq.m','Pcs','Box','Roll','Kg','Meter','Set','Other',
   ],
   G: ['Powder Coating','Lamination','Polishing','Upholstery','Plating','Engraving','Other'],
@@ -538,13 +538,6 @@ function _seedDropdowns(ss) {
     sh.getRange(2, col, values.length, 1).setValues(values.map(function(v) { return [v]; }));
   });
 }
-
-// One-time (run from the editor): make the live workbook offer Project-Management's unit names
-// (Sq.ft, Sq.m, Pcs, Box, Roll, Kg, Meter, Set, Other — also added to DROPDOWN_LISTS.E above so a
-// future Initialize keeps them). Appends only the missing names to Dropdowns col E and re-points the
-// UOM dropdown on Item / SFG / FG Master at the longer list. Does NOT re-seed the other lists
-// (Categories etc.) and never removes a unit. Safe to run more than once.
-const IM_PM_UNITS = ['Sq.ft', 'Sq.m', 'Pcs', 'Box', 'Roll', 'Kg', 'Meter', 'Set', 'Other'];
 
 // Locate a column by its header text — future-proof against column inserts.
 // Returns 1-based col index, or -1 if not found.

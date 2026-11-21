@@ -115,10 +115,41 @@ function IM_installInterlinkMenu() {
   );
 }
 
+/**
+ * Menu: Interlink > Check units. The unit list (DROPDOWN_LISTS.E) is the same in every 3SP system. This (1) rewrites the Dropdowns sheet's unit column and the UOM
+ * dropdowns of Item / SFG / FG Master to exactly that list when they differ, and (2) lists the items whose UOM is NOT in the list (typos, old names), so
+ * they can be corrected by hand. Nothing in a register or an item is changed.
+ */
+function IM_checkUnits() {
+  var ss = SpreadsheetApp.getActive(), dd = ss.getSheetByName('Dropdowns'), want = DROPDOWN_LISTS.E, fixed = false;
+  if (dd) {
+    var cur = dd.getLastRow() >= 2 ? dd.getRange(2, 5, dd.getLastRow() - 1, 1).getValues().map(function (r) { return String(r[0]).trim(); }).filter(String) : [];
+    if (cur.join('|') !== want.join('|')) {
+      if (dd.getLastRow() >= 2) dd.getRange(2, 5, dd.getLastRow() - 1, 1).clearContent();
+      dd.getRange(2, 5, want.length, 1).setValues(want.map(function (u) { return [u]; }));
+      try { _applyMasterValidations(ss); } catch (e) { Logger.log('validations: ' + e.message); }
+      fixed = true;
+    }
+  }
+  var ok = {}; want.forEach(function (u) { ok[u] = true; });
+  var bad = [];
+  [['Item Master', 'UOM'], ['SFG Master', 'UOM'], ['FG Master', 'UOM']].forEach(function (x) {
+    var sh = ss.getSheetByName(x[0]); if (!sh || sh.getLastRow() < 2) return;
+    var col = _colByHeader(sh, x[1]); if (col < 1) return;
+    var vals = sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(col, 1)).getValues();
+    vals.forEach(function (r) { var u = String(r[col - 1] == null ? '' : r[col - 1]).trim(); if (r[0] && u && !ok[u]) bad.push(r[0] + ' (' + u + ')'); });
+  });
+  var msg = (fixed ? 'The unit list and the UOM dropdowns were updated to the common list (' + want.length + ' units).\n\n' : 'The unit list is already the common list (' + want.length + ' units).\n\n') +
+    (bad.length ? bad.length + ' item(s) have a UOM that is not in the list (correct them by picking from the dropdown):\n' + bad.slice(0, 25).join(', ') + (bad.length > 25 ? ' ...' : '') : 'Every item\'s UOM is in the list.');
+  try { SpreadsheetApp.getUi().alert('Units (UOM)', msg, SpreadsheetApp.getUi().ButtonSet.OK); } catch (e) { Logger.log(msg); }
+  return { fixed: fixed, bad: bad };
+}
+
 function IM_onOpen_() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('🔗 Interlink')
     .addItem('Refresh dropdowns from Masters', 'IM_refreshDropdowns')
+    .addItem('Check units (UOM list)',         'IM_checkUnits')
     .addItem('➕ Add employee',                'IM_addEmployeeDialog')
     .addItem('Send suppliers and job workers to Masters', 'IM_syncPartiesNow')
     .addItem('DocGen link: show key',            'IM_docgenSetup')

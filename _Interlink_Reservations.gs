@@ -338,8 +338,8 @@ function IM_processSelfTestCommands_() {
         } else {   // dc: a manual number so no real DC number is used up
           var dc = addFgDelivery({ date: new Date(), deliveryType: 'Customer', customerName: 'ZZ-SELFTEST', project: p.project, billTo: 'ZZ-SELFTEST',
             manualDcNo: 'ZZ-SELFTEST-DC-' + Date.now(), skipPdf: true, bypassStockCheck: true,
-            mainItems: [{ description: 'ZZ selftest main item', qty: 1, uom: 'Nos' }],
-            hardwareItems: [{ itemCode: p.itemCode, description: 'ZZ selftest hardware', qty: qty, uom: 'Nos' }] });
+            mainItems: [{ description: 'ZZ selftest main item', qty: 1, uom: 'No.s' }],
+            hardwareItems: [{ itemCode: p.itemCode, description: 'ZZ selftest hardware', qty: qty, uom: 'No.s' }] });
           if (!dc.success) throw new Error(dc.message);
           result = dc.code;
         }

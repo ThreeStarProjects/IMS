@@ -226,7 +226,7 @@ function IM_dgDc_(d) {
   var t = IM_dgText_, main = d.mainItems, hw = d.hardwareItems || [];
   if (!Array.isArray(main) || !main.length) throw new Error('At least one main item is required.');
   if (main.length + hw.length > IM_DG_MAX_LINES) throw new Error('Too many lines.');
-  var line = function (l) { return { itemCode: t(l.itemCode), description: t(l.description), qty: Number(l.qty), uom: t(l.uom) || 'Nos', weight: Number(l.weight) || 0, remark: t(l.remark) }; };
+  var line = function (l) { return { itemCode: t(l.itemCode), description: t(l.description), qty: Number(l.qty), uom: t(l.uom) || 'No.s', weight: Number(l.weight) || 0, remark: t(l.remark) }; };
   return addFgDelivery({
     manualDcNo: IM_dgNumber_(d),
     date: d.date, deliveryType: d.deliveryType === 'Internal' ? 'Internal' : 'Customer',
@@ -297,8 +297,8 @@ function IM_dgReviseDc_(d, dcNo) {
       if (r[3]) { oldQty[r[3]] = (oldQty[r[3]] || 0) + (Number(r[5]) || 0); codes[r[3]] = 1; }
     });
     var all = [], totQty = 0, totWt = 0;
-    main.forEach(function (l) { var q = Number(l.qty) || 0, w = Number(l.weight) || 0; totQty += q; totWt += w; all.push({ section: 'Main', code: t(l.itemCode), desc: t(l.description), qty: q, uom: t(l.uom) || 'Nos', weight: w, remark: t(l.remark) }); });
-    hw.forEach(function (l) { var q = Number(l.qty) || 0; if (q <= 0) return; totQty += q; all.push({ section: 'Hardware', code: t(l.itemCode), desc: t(l.description), qty: q, uom: t(l.uom) || 'Nos', weight: 0, remark: t(l.remark) }); });
+    main.forEach(function (l) { var q = Number(l.qty) || 0, w = Number(l.weight) || 0; totQty += q; totWt += w; all.push({ section: 'Main', code: t(l.itemCode), desc: t(l.description), qty: q, uom: t(l.uom) || 'No.s', weight: w, remark: t(l.remark) }); });
+    hw.forEach(function (l) { var q = Number(l.qty) || 0; if (q <= 0) return; totQty += q; all.push({ section: 'Hardware', code: t(l.itemCode), desc: t(l.description), qty: q, uom: t(l.uom) || 'No.s', weight: 0, remark: t(l.remark) }); });
     all.forEach(function (l) { if (!(l.qty > 0)) throw new Error('Every line needs a quantity above zero.'); if (!l.desc) throw new Error('Every line needs a description.'); });
 
     // only the EXTRA quantity (new minus what this challan already took) can run the stock short

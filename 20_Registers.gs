@@ -759,7 +759,7 @@ function postFgDeliveryRows(formData) {
       totalQty += qty; totalWt += wt;
       allLines.push({
         section: 'Main', code: l.itemCode || '', desc: l.description || '',
-        qty: qty, uom: l.uom || 'Nos', weight: wt, remark: l.remark || '',
+        qty: qty, uom: l.uom || 'No.s', weight: wt, remark: l.remark || '',
       });
     });
     (formData.hardwareItems || []).forEach(function(l, i) {
@@ -768,7 +768,7 @@ function postFgDeliveryRows(formData) {
       totalQty += qty;
       allLines.push({
         section: 'Hardware', code: l.itemCode || '', desc: l.description || '',
-        qty: qty, uom: l.uom || 'Nos', weight: 0, remark: l.remark || '',
+        qty: qty, uom: l.uom || 'No.s', weight: 0, remark: l.remark || '',
       });
     });
 
