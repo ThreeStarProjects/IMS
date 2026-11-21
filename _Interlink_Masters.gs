@@ -174,8 +174,8 @@ function IM_checkNegativeStock() {
     var phys = Number(r[8]) + Number(r[9] || 0), resv = Number(r[9] || 0), code = r[0];
     var iss = Object.keys(issued[code] || {}).map(function (p) { return p + ': ' + IM_round3_(issued[code][p]); }).join(' | ');
     var why = phys < -0.0001
-      ? 'The store itself is below zero: more was issued or sent out than was ever received. Look for a missing GRN or opening stock (Adjustment) for this item.'
-      : 'The store has ' + IM_round3_(phys) + ' but reservations hold ' + IM_round3_(resv) + '. If the goods have already gone out, the project they were issued to is probably written differently from the project reserved for, so the reservation was never used up: release it (Reservation form > Release) or issue under the same PRJ id.';
+      ? 'The store itself is below zero: more was issued or sent out than was ever received. The stock was probably never entered into IMS: enter what really came in with a GRN, or as Adjustment type Opening.'
+      : 'IMS thinks the store has ' + IM_round3_(phys) + ' but reservations hold ' + IM_round3_(resv) + '. (a) If the goods are really in the store but were never entered (an item added directly, no GRN, no opening stock), IMS thinks it is empty: enter the real quantity with a GRN or Adjustment type Opening. (b) If the goods already went out under a project name different from the one reserved for, the reservation was never used up: release it (Reservation form > Release) or issue under the same PRJ id.';
     return [code, r[1], IM_round3_(phys), IM_round3_(resv), IM_round3_(Number(r[8])), (held[code] || []).join(' | '), iss, why];
   });
   if (out.length) sh.getRange(2, 1, out.length, head.length).setValues(out).setWrap(true).setVerticalAlignment('top');
